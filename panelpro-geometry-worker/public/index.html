@@ -38,6 +38,8 @@
       text-align: center; color: var(--muted); cursor: pointer; background: var(--panel2);
       transition: border-color .15s, color .15s; }
     .dropzone.drag, .dropzone.loaded { border-color: var(--accent); color: var(--txt); }
+    .crop-stage { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px;
+      overflow: hidden; background: #0a0d12; line-height: 0; }
     textarea { font-family: var(--mono); font-size: 12px; resize: vertical; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .row4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
@@ -109,7 +111,9 @@
           <span id="dropLabel">Click to choose, or drop a file here</span>
           <input id="fileInput" type="file" accept="image/png,image/tiff,image/jpeg" hidden />
         </div>
-        <div class="hint">Bypasses the RestylePro database fetch — the buffer is fed straight into the OpenCV warp.</div>
+        <div class="hint">Bypasses the RestylePro fetch — the uploaded buffer is cropped & sized directly.</div>
+        <div id="cropStage" class="crop-stage" style="display:none"></div>
+        <div class="hint" id="cropHint" style="display:none">⚡ Drag / resize the blue box over the panel you want — the X/Y/W/H below fill in automatically.</div>
       </div>
 
       <label>Panel ID</label>
@@ -180,6 +184,7 @@
     </section>
   </main>
 
+  <script src="https://unpkg.com/konva@9.3.16/konva.min.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     let pollTimer = null;
@@ -321,6 +326,7 @@
       if (file) {
         dz.classList.add('loaded');
         $('dropLabel').textContent = `${file.name} (${(file.size / 1048576).toFixed(1)} MB)`;
+        initCropCanvas(file);
       }
     };
     dz.addEventListener('click', () => $('fileInput').click());
@@ -330,6 +336,85 @@
     ['dragleave', 'drop'].forEach((ev) =>
       dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
     dz.addEventListener('drop', (e) => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+
+    // ── Konva interactive crop canvas ────────────────────────────────────────
+    // Drop a proof → drag/resize a box over the panel; the X/Y/W/H fields (the
+    // source of truth for the cropBox sent to the worker) update in image-pixel
+    // space. Falls back gracefully to manual number entry if Konva can't load.
+    let kStage = null, kLayer = null, kRect = null, kScale = 1;
+
+    function initCropCanvas(file) {
+      if (!window.Konva) return; // CDN blocked — numeric fields still work
+      const img = new Image();
+      img.onerror = () => { $('cropStage').style.display = 'none'; };
+      img.onload = () => {
+        const natW = img.naturalWidth, natH = img.naturalHeight;
+        const host = $('cropStage');
+        host.style.display = 'block';
+        $('cropHint').style.display = 'block';
+        kScale = Math.min(1, (host.clientWidth || 440) / natW);
+        const dispW = Math.max(1, Math.round(natW * kScale));
+        const dispH = Math.max(1, Math.round(natH * kScale));
+        if (kStage) kStage.destroy();
+        host.innerHTML = '';
+        kStage = new Konva.Stage({ container: host, width: dispW, height: dispH });
+        kLayer = new Konva.Layer(); kStage.add(kLayer);
+        kLayer.add(new Konva.Image({ image: img, width: dispW, height: dispH, listening: false }));
+
+        // Seed the box from current fields if sane, else a centered quarter.
+        const cw = (+$('cropW').value > 0 ? +$('cropW').value : natW / 2);
+        const ch = (+$('cropH').value > 0 ? +$('cropH').value : natH / 2);
+        const cx = (+$('cropX').value > 0 ? +$('cropX').value : (natW - cw) / 2);
+        const cy = (+$('cropY').value > 0 ? +$('cropY').value : (natH - ch) / 2);
+        kRect = new Konva.Rect({
+          x: cx * kScale, y: cy * kScale, width: cw * kScale, height: ch * kScale,
+          stroke: '#4f8cff', strokeWidth: 2, dash: [6, 4], fill: 'rgba(79,140,255,0.15)',
+          draggable: true,
+        });
+        kLayer.add(kRect);
+        const tr = new Konva.Transformer({
+          nodes: [kRect], rotateEnabled: false, keepRatio: false,
+          borderStroke: '#4f8cff', anchorStroke: '#4f8cff', anchorSize: 10,
+          boundBoxFunc: (o, n) => (n.width < 10 || n.height < 10 ? o : n),
+        });
+        kLayer.add(tr);
+        kRect.on('dragmove transform transformend', syncFieldsFromRect);
+        syncFieldsFromRect();
+        kLayer.draw();
+      };
+      img.src = URL.createObjectURL(file);
+    }
+
+    function clampN(v, lo, hi) { return Math.max(lo, Math.min(v, hi)); }
+
+    function syncFieldsFromRect() {
+      if (!kRect || !kStage || !kScale) return;
+      // Fold the transformer's scale into width/height so values don't compound.
+      const w = Math.max(1, kRect.width() * kRect.scaleX());
+      const h = Math.max(1, kRect.height() * kRect.scaleY());
+      kRect.width(w); kRect.height(h); kRect.scaleX(1); kRect.scaleY(1);
+      const x = clampN(kRect.x(), 0, kStage.width() - w);
+      const y = clampN(kRect.y(), 0, kStage.height() - h);
+      kRect.x(x); kRect.y(y);
+      $('cropX').value = Math.round(x / kScale);
+      $('cropY').value = Math.round(y / kScale);
+      $('cropW').value = Math.round(w / kScale);
+      $('cropH').value = Math.round(h / kScale);
+    }
+
+    // Typing in the number fields moves the box too. Programmatic .value sets
+    // don't fire 'input', so there's no feedback loop with syncFieldsFromRect.
+    function syncRectFromFields() {
+      if (!kRect || !kStage || !kScale) return;
+      kRect.scaleX(1); kRect.scaleY(1);
+      kRect.x((+$('cropX').value || 0) * kScale);
+      kRect.y((+$('cropY').value || 0) * kScale);
+      kRect.width(Math.max(1, (+$('cropW').value || 1) * kScale));
+      kRect.height(Math.max(1, (+$('cropH').value || 1) * kScale));
+      kLayer.draw();
+    }
+    ['cropX', 'cropY', 'cropW', 'cropH'].forEach((id) =>
+      $(id).addEventListener('input', syncRectFromFields));
 
     // ── Panel target presets ─────────────────────────────────────────────────
     $('preset').addEventListener('change', (e) => {
