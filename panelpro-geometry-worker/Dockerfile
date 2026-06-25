@@ -5,7 +5,9 @@
 # builds in seconds and runs anywhere. Deploy to any container host, or use the
 # render.yaml blueprint for a no-Docker managed deploy.
 # ──────────────────────────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim
+# Node 22 — has native WebSocket, which @supabase/supabase-js requires (on
+# Node 20 it throws "Node.js 20 detected without native WebSocket support").
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
