@@ -442,11 +442,15 @@
         kLayer = new Konva.Layer(); kStage.add(kLayer);
         kLayer.add(new Konva.Image({ image: img, width: dispW, height: dispH, listening: false }));
 
-        // Seed the box from current fields if sane, else a centered quarter.
-        const cw = (+$('cropW').value > 0 ? +$('cropW').value : natW / 2);
-        const ch = (+$('cropH').value > 0 ? +$('cropH').value : natH / 2);
-        const cx = (+$('cropX').value > 0 ? +$('cropX').value : (natW - cw) / 2);
-        const cy = (+$('cropY').value > 0 ? +$('cropY').value : (natH - ch) / 2);
+        // Start the box at the PANEL'S aspect ratio so fit:'fill' never stretches
+        // the artwork (which is what triggered the edge-error rejection).
+        const panelAspect = (+$('w').value > 0 && +$('h').value > 0)
+          ? (+$('w').value / +$('h').value) : (natW / natH);
+        let cw = natW * 0.6;
+        let ch = cw / panelAspect;
+        if (ch > natH * 0.9) { ch = natH * 0.9; cw = ch * panelAspect; }
+        const cx = (natW - cw) / 2;
+        const cy = (natH - ch) / 2;
         kRect = new Konva.Rect({
           x: cx * kScale, y: cy * kScale, width: cw * kScale, height: ch * kScale,
           stroke: '#4f8cff', strokeWidth: 2, dash: [6, 4], fill: 'rgba(79,140,255,0.15)',
@@ -454,7 +458,10 @@
         });
         kLayer.add(kRect);
         const tr = new Konva.Transformer({
-          nodes: [kRect], rotateEnabled: false, keepRatio: false,
+          nodes: [kRect], rotateEnabled: false,
+          // Lock to the panel aspect: corner anchors only + keepRatio.
+          keepRatio: true,
+          enabledAnchors: ['top-left', 'top-right', 'bottom-left', 'bottom-right'],
           borderStroke: '#4f8cff', anchorStroke: '#4f8cff', anchorSize: 10,
           boundBoxFunc: (o, n) => (n.width < 10 || n.height < 10 ? o : n),
         });
@@ -505,6 +512,8 @@
       // A picked template is a verified panel record.
       $('dimSource').value = 'database';
       previewDims();
+      // Re-fit the crop box to the new panel aspect if an image is loaded.
+      if (uploadFile) initCropCanvas(uploadFile);
     });
 
     function buildManifest(includeUrl) {

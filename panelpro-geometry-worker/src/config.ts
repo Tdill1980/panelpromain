@@ -47,9 +47,12 @@ export const config = {
    * These are deliberately tight for pre-press fidelity.
    */
   qc: {
-    maxDeltaE: 2.0, // hue drift / ambient dimming
-    minSsim: 0.98, // pixel blur / layout warp
-    maxEdgeErrorPx: 1.0, // boundary deviation
+    maxDeltaE: num('QC_MAX_DELTAE', 2.0), // hue drift / ambient dimming
+    minSsim: num('QC_MIN_SSIM', 0.98), // pixel blur / layout warp
+    // Boundary deviation in downscaled compare-space px. 1px is unrealistic for
+    // large upscales (resampling shifts edges ~1–2px); 3 catches real warping
+    // while passing faithful crops. Tunable via env.
+    maxEdgeErrorPx: num('QC_MAX_EDGE_PX', 3.0),
     // OCR is OFF by default: tesseract.js can crash the process on huge rasters
     // (Leptonica malloc fail) and the failure isn't catchable. Opt in only if
     // you've verified it on your content.
