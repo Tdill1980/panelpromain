@@ -128,6 +128,8 @@ export interface ExtractionResult {
   dimensionSource: DimensionSource;
   /** Public/object path written to Supabase Storage. */
   storagePath: string;
+  /** Object path of the small JPEG preview thumbnail, if one was generated. */
+  previewPath?: string;
   qc: QcReport;
   /** Number of occluded voids repaired by AI (0 when none present). */
   inpaintedVoids: number;

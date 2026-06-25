@@ -40,3 +40,28 @@ export async function uploadPrintAsset(objectPath: string, png: Buffer): Promise
   }
   return objectPath;
 }
+
+/** Upload a small preview thumbnail (JPEG) for the operator console. */
+export async function uploadPreview(objectPath: string, jpeg: Buffer): Promise<string> {
+  const { error } = await getClient()
+    .storage.from(config.supabase.bucket)
+    .upload(objectPath, jpeg, { contentType: 'image/jpeg', upsert: true });
+  if (error) {
+    throw new Error(`Supabase preview upload failed for ${objectPath}: ${error.message}`);
+  }
+  return objectPath;
+}
+
+/**
+ * Mint a short-lived signed URL for an object. Generated on demand per click so
+ * links never go stale and work for private buckets.
+ */
+export async function createSignedUrl(objectPath: string, expiresInSec = 3600): Promise<string> {
+  const { data, error } = await getClient()
+    .storage.from(config.supabase.bucket)
+    .createSignedUrl(objectPath, expiresInSec);
+  if (error || !data?.signedUrl) {
+    throw new Error(`Could not sign URL for ${objectPath}: ${error?.message ?? 'no url'}`);
+  }
+  return data.signedUrl;
+}

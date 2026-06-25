@@ -58,6 +58,12 @@
     .pill.src-ok { background: #16361f; color: var(--ok); }
     .pill.src-warn { background: #3a3417; color: var(--warn); }
     .mono { font-family: var(--mono); }
+    .btn-link { display: inline-block; margin-top: 10px; margin-right: 8px; padding: 8px 14px;
+      border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; }
+    .btn-dl { background: var(--accent); color: #fff; }
+    .btn-view { background: var(--panel2); color: var(--txt); border: 1px solid var(--line); }
+    .preview-img { display: block; margin-top: 12px; max-width: 100%; border: 1px solid var(--line);
+      border-radius: 8px; background: #fff; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-weight: 500; }
@@ -232,6 +238,14 @@
       if (rec.result) {
         html += `<div class="mono" style="margin-top:6px">voids repaired: ${rec.result.inpaintedVoids}</div>`;
         html += `<div class="hint">Stored at: ${rec.result.storagePath}</div>`;
+        // View / Download the finished print asset from Supabase.
+        html += `<div><a class="btn-link btn-dl" href="/jobs/${encodeURIComponent(rec.jobId)}/download" target="_blank" rel="noopener">⬇ Download print file</a>`;
+        if (rec.result.previewPath) {
+          html += `<a class="btn-link btn-view" href="/jobs/${encodeURIComponent(rec.jobId)}/preview" target="_blank" rel="noopener">🔍 View full preview</a></div>`;
+          html += `<img class="preview-img" src="/jobs/${encodeURIComponent(rec.jobId)}/preview" alt="print preview" />`;
+        } else {
+          html += `</div>`;
+        }
         html += '<table style="margin-top:12px"><thead><tr><th>QC metric</th><th>Value</th><th>Limit</th><th></th></tr></thead><tbody>';
         for (const m of rec.result.qc.metrics) {
           html += `<tr><td>${m.name}</td><td>${m.value.toFixed(4)}</td><td>${m.threshold}</td>
@@ -271,7 +285,9 @@
           `<tr><td>${j.jobId}</td><td><span class="pill ${j.status}">${j.status}</span></td>
            <td class="mono">${dimsText(j.meta)}</td>
            <td>${j.meta ? sourceBadge(j.meta.dimensionSource) : '—'}</td>
-           <td class="muted">${j.result ? j.result.storagePath : '—'}</td></tr>`).join('')
+           <td>${j.result
+             ? `<a class="mono" href="/jobs/${encodeURIComponent(j.jobId)}/download" target="_blank" rel="noopener">⬇ download</a>`
+             : '<span class="muted">—</span>'}</td></tr>`).join('')
           : '<tr><td colspan="5" class="muted">No jobs yet.</td></tr>';
       } catch {}
     }
