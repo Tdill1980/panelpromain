@@ -10,7 +10,14 @@ FROM node:20-bookworm-slim
 
 # Link opencv4nodejs against the distro's prebuilt OpenCV instead of compiling
 # the whole library from source on every build.
-ENV OPENCV4NODEJS_DISABLE_AUTOBUILD=1
+#
+# Debian/Ubuntu install OpenCV under multiarch paths, NOT the /usr/local
+# defaults the addon assumes — so point it explicitly or the native build fails
+# with "no OpenCV libraries found in lib dir: /usr/local/lib". (amd64 paths.)
+ENV OPENCV4NODEJS_DISABLE_AUTOBUILD=1 \
+    OPENCV_INCLUDE_DIR=/usr/include/opencv4 \
+    OPENCV_LIB_DIR=/usr/lib/x86_64-linux-gnu \
+    OPENCV_BIN_DIR=/usr/bin
 
 # Native toolchain + OpenCV dev headers/libs (also satisfies the runtime .so's),
 # plus libvips for sharp. Cleaned up in the same layer to keep the image lean.
