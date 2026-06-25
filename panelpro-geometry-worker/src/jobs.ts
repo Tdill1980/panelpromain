@@ -34,6 +34,8 @@ export interface JobRecord {
   meta?: JobMeta;
   /** Re-runnable inputs for Force Re-Extract (URL jobs only; no raw bytes). */
   inputs?: JobInputs;
+  /** Current pipeline stage, surfaced live in the console progress tracker. */
+  stage?: string;
   result?: ExtractionResult;
   /** Failure / QC detail for the UI. */
   error?: string;

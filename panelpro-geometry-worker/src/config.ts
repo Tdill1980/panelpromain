@@ -50,7 +50,17 @@ export const config = {
     maxDeltaE: 2.0, // hue drift / ambient dimming
     minSsim: 0.98, // pixel blur / layout warp
     maxEdgeErrorPx: 1.0, // boundary deviation
-    enforceOcr: bool('ENFORCE_OCR', true), // 1:1 lettering/typography (best-effort)
+    // OCR is OFF by default: tesseract.js can crash the process on huge rasters
+    // (Leptonica malloc fail) and the failure isn't catchable. Opt in only if
+    // you've verified it on your content.
+    enforceOcr: bool('ENFORCE_OCR', false), // 1:1 lettering/typography (best-effort)
+  },
+
+  export: {
+    // PNG is LOSSLESS at every compression level — level 0 only bloats the file
+    // (~1 GB at 30000×9150, which exceeds storage limits). Default to real
+    // (still lossless) compression. 0–9; higher = smaller, more CPU.
+    pngCompression: num('PNG_COMPRESSION', 6),
   },
 } as const;
 
