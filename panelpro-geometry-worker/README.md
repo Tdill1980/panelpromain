@@ -92,8 +92,52 @@ docker run -p 8080:8080 --env-file .env panelpro-geometry-worker
 
 The image installs `libopencv-dev` and compiles the native `opencv4nodejs`
 bindings during build, so no OpenCV setup is needed on the host. Hand the same
-Dockerfile to Render, Railway, Fly.io, ECS, Cloud Run, or your own VM. Give the
-container generous memory — jobs hold full `30000 × 9150` rasters.
+Dockerfile to Render, Railway, Fly.io, ECS, Cloud Run, or your own VM.
+
+### Deploy to a DigitalOcean Droplet (Docker Compose)
+
+```bash
+# 1) Docker on the host
+curl -fsSL https://get.docker.com | sudo sh
+
+# 2) Add swap — Droplets ship with NONE, and a big job can briefly spike.
+sudo fallocate -l 8G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# 3) Code + secrets
+git clone <your-repo> && cd panelpro-geometry-worker
+cp .env.example .env && nano .env        # fill SUPABASE_* and WEBHOOK_SECRET
+
+# 4) Build native bindings + run
+docker compose up -d --build
+docker compose logs -f
+```
+
+#### Sizing — read this before picking a Droplet
+
+A single `30000 × 9150` job is **274.5 MP**. Its native buffers (warped Mat ≈
+1.1 GB, the 16-bit RGBA working raster ≈ 2.2 GB, the level-0 output PNG ≈ 1.1 GB,
+plus the QC reload) coexist at peak, so **expect ~5–8 GB of RAM per concurrent
+job**. These are off-heap native/libvips allocations — a crash shows up as the
+host **OOM-killer**, not a V8 heap error, so `--max-old-space-size` won't help.
+
+| Workload | Droplet RAM | Notes |
+|----------|-------------|-------|
+| One panel at a time | **8 GB** + 8 GB swap | comfortable single-job |
+| Concurrent panels | **16 GB+** | size to peak × concurrency |
+| 4 GB (e.g. t4g.medium) | ❌ | will OOM on a full panel |
+
+`docker-compose.yml` sets `mem_limit` as a guard (kills a runaway job instead of
+the host) — tune it below your Droplet's RAM.
+
+#### Security (public IP)
+
+- **Set `WEBHOOK_SECRET`.** When unset, the webhook accepts anonymous jobs.
+- The compose file binds the port to `127.0.0.1` and assumes a **TLS reverse
+  proxy** (Caddy/Nginx + Let's Encrypt) in front. A browser on an HTTPS
+  dashboard **cannot** call `http://<droplet-ip>:8080` (mixed content) — give the
+  worker a domain with HTTPS.
 
 ## Submitting jobs
 

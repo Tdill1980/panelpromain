@@ -1,0 +1,46 @@
+# PanelPro Geometry Worker — Droplet / single-host deployment.
+#
+#   docker compose up -d --build      # build native bindings + run detached
+#   docker compose logs -f            # follow structured job logs
+#   docker compose down               # stop
+#
+# Requires a sibling .env (see .env.example) with at least:
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and a non-empty WEBHOOK_SECRET.
+services:
+  worker:
+    build: .
+    image: panelpro-worker
+    container_name: panelpro-print-engine
+    restart: unless-stopped
+    ports:
+      # Bind to localhost only and terminate TLS in a reverse proxy (Caddy/Nginx)
+      # in front. Change to "8080:8080" only if you firewall the port yourself.
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - .env
+
+    # ── Big-raster memory headroom ────────────────────────────────────────────
+    # A single 30000×9150 job peaks around 5–8 GB across its native buffers.
+    # mem_limit is a guard, not a target: set it BELOW your Droplet's RAM so a
+    # runaway job is killed instead of taking the host down. Tune to your box:
+    #   8 GB Droplet  -> ~6g    16 GB Droplet -> ~13g
+    # Comment it out entirely to let the worker use all host RAM + swap.
+    mem_limit: 6g
+    mem_reservation: 2g
+    # Allow bursting into host swap when a job spikes (add swap on the Droplet —
+    # it has none by default: see DEPLOY notes in README).
+    mem_swappiness: 60
+
+    healthcheck:
+      test: ["CMD", "node", "scripts/healthcheck.js"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    # Structured JSON logs; cap so they don't fill the Droplet disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
