@@ -12,6 +12,7 @@
 
 import path from 'node:path';
 import express, { type Request, type Response } from 'express';
+import multer from 'multer';
 import { config, assertRuntimeConfig } from './config';
 import { executeMechanicalExtraction } from './processor';
 import { QcGateError } from './qc';
@@ -21,8 +22,17 @@ import type { ExtractionJob, PanelManifest } from './types';
 
 const app = express();
 
-// Large manifests are fine; the raster itself is fetched by URL, not posted.
+// Large manifests are fine; on the automated route the raster is fetched by
+// URL, not posted.
 app.use(express.json({ limit: '8mb' }));
+
+// Manual-upload backup route: proofs are large print rasters, kept in memory
+// (this container is memory-unconstrained by design) and handed straight to the
+// pipeline as a buffer. 512 MB ceiling guards against accidental huge uploads.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 512 * 1024 * 1024, files: 1 },
+});
 
 // Operator console (static SPA). Not part of the print pipeline — observability
 // only. Served from the repo-root /public dir (one level up from dist/ or src/).
@@ -91,6 +101,44 @@ app.post('/webhook/extract', (req: Request, res: Response) => {
   void dispatch(job);
 });
 
+/**
+ * Manual-upload backup route. Operator drops a standalone 2D proof + the sizing
+ * metadata; the worker bypasses the RestylePro fetch and runs the identical
+ * deterministic pipeline on the uploaded buffer.
+ *
+ * multipart/form-data:
+ *   - `artwork`: the raw proof image (PNG/TIFF/…)
+ *   - `payload`: JSON string { jobId, outputPath, manifest } (no masterArtworkUrl)
+ */
+app.post('/webhook/extract/upload', upload.single('artwork'), (req: Request, res: Response) => {
+  if (!isAuthorized(req)) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  if (!req.file || !req.file.buffer?.length) {
+    res.status(400).json({ error: 'No artwork file uploaded (field "artwork").' });
+    return;
+  }
+
+  let job: ExtractionJob;
+  try {
+    const raw = (req.body as Record<string, unknown>)?.payload;
+    if (typeof raw !== 'string') throw new Error('Missing "payload" JSON field.');
+    const parsed = JSON.parse(raw) as unknown;
+    // URL not required here — the master comes from the uploaded buffer.
+    job = validateJob(parsed, { requireMasterUrl: false });
+    job.masterBytes = req.file.buffer;
+    job.source = 'manual-upload';
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+    return;
+  }
+
+  createJob(job.jobId);
+  res.status(202).json({ accepted: true, jobId: job.jobId, source: 'manual-upload' });
+  void dispatch(job);
+});
+
 async function dispatch(job: ExtractionJob): Promise<void> {
   const started = Date.now();
   updateJob(job.jobId, { status: 'processing' });
@@ -150,7 +198,12 @@ function isAuthorized(req: Request): boolean {
   return req.header('x-panelpro-signature') === config.webhookSecret;
 }
 
-function validateJob(body: unknown): ExtractionJob {
+interface ValidateOpts {
+  /** Whether manifest.masterArtworkUrl must be present (false for uploads). */
+  requireMasterUrl: boolean;
+}
+
+function validateJob(body: unknown, opts: ValidateOpts = { requireMasterUrl: true }): ExtractionJob {
   if (!body || typeof body !== 'object') throw new Error('Body must be a JSON object.');
   const b = body as Record<string, unknown>;
 
@@ -158,16 +211,16 @@ function validateJob(body: unknown): ExtractionJob {
   if (typeof b.outputPath !== 'string' || !b.outputPath) {
     throw new Error('outputPath is required.');
   }
-  const manifest = validateManifest(b.manifest);
-  return { jobId: b.jobId, outputPath: b.outputPath, manifest };
+  const manifest = validateManifest(b.manifest, opts);
+  return { jobId: b.jobId, outputPath: b.outputPath, manifest, source: 'restylepro-url' };
 }
 
-function validateManifest(raw: unknown): PanelManifest {
+function validateManifest(raw: unknown, opts: ValidateOpts): PanelManifest {
   if (!raw || typeof raw !== 'object') throw new Error('manifest is required.');
   const m = raw as Record<string, unknown>;
 
   if (typeof m.panelId !== 'string' || !m.panelId) throw new Error('manifest.panelId is required.');
-  if (typeof m.masterArtworkUrl !== 'string' || !m.masterArtworkUrl) {
+  if (opts.requireMasterUrl && (typeof m.masterArtworkUrl !== 'string' || !m.masterArtworkUrl)) {
     throw new Error('manifest.masterArtworkUrl is required.');
   }
 

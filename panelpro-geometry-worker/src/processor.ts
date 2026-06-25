@@ -49,8 +49,10 @@ export async function executeMechanicalExtraction(job: ExtractionJob): Promise<E
   const { manifest } = job;
   const dims = resolveDimensions(manifest.physical);
 
-  // ── A. DOWNLOAD MASTER ARTWORK ──────────────────────────────────────────────
-  const masterBytes = await downloadMaster(manifest.masterArtworkUrl);
+  // ── A. ACQUIRE MASTER ARTWORK ───────────────────────────────────────────────
+  // Manual-upload route: ingest the provided buffer directly. Otherwise fetch
+  // the flat RestylePro canvas by URL. Geometry downstream is identical.
+  const masterBytes = await loadMaster(job);
 
   // ── B. MECHANICAL CROP & WARP (OpenCV) ──────────────────────────────────────
   const warpedPng = warpToTarget(masterBytes, manifest.sourceQuad, dims);
@@ -67,9 +69,11 @@ export async function executeMechanicalExtraction(job: ExtractionJob): Promise<E
   // ── E. EXPORT PRINT FILE ────────────────────────────────────────────────────
   const printPng = await encodePrintPng(repaired, dims);
 
-  // Strict QC gate against the original RestylePro source. Halts on violation.
+  // Strict QC gate against the original source — the uploaded buffer on the
+  // manual route, or the RestylePro URL otherwise. Halts on violation.
   const qc = await runQualityGate({
     candidate: printPng,
+    referenceBytes: job.masterBytes,
     referenceUrl: manifest.masterArtworkUrl,
     sourceQuad: manifest.sourceQuad,
     dims,
@@ -93,6 +97,19 @@ export async function executeMechanicalExtraction(job: ExtractionJob): Promise<E
 // ────────────────────────────────────────────────────────────────────────────
 // A. Download
 // ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the master raster from whichever source the job carries. The manual
+ * backup route supplies bytes directly; the automated route supplies a URL.
+ */
+async function loadMaster(job: ExtractionJob): Promise<Buffer> {
+  if (job.masterBytes && job.masterBytes.length > 0) return job.masterBytes;
+  const url = job.manifest.masterArtworkUrl;
+  if (!url) {
+    throw new Error('Job has neither masterBytes (manual upload) nor masterArtworkUrl.');
+  }
+  return downloadMaster(url);
+}
 
 async function downloadMaster(url: string): Promise<Buffer> {
   const res = await axios.get<ArrayBuffer>(url, {
