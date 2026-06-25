@@ -119,10 +119,11 @@
       <label>Panel target template</label>
       <select id="preset">
         <option value="">— custom —</option>
-        <option value="190,51,150,5" selected>Driver side (190″ × 51″)</option>
-        <option value="190,51,150,5">Passenger side (190″ × 51″)</option>
-        <option value="80,51,150,5">Rear door (80″ × 51″)</option>
-        <option value="96,48,150,5">Hood (96″ × 48″)</option>
+        <option value="133.9,56,150,5" selected>Driver side (133.9″ × 56″)</option>
+        <option value="133.9,56,150,5">Passenger side (133.9″ × 56″)</option>
+        <option value="160,56,150,5">Roof / Top (160″ × 56″)</option>
+        <option value="70,56,150,5">Rear (70″ × 56″)</option>
+        <option value="58,40,150,5">Hood (58″ × 40″)</option>
       </select>
 
       <label>Dimension source (verification tag)</label>
@@ -145,11 +146,14 @@
         <div class="muted" id="dimsFormula">target pixels (computed deterministically)</div>
       </div>
 
-      <label>Source quad — 4 points TL,TR,BR,BL (JSON)</label>
-      <textarea id="quad" rows="3">[{"x":0,"y":0},{"x":4000,"y":0},{"x":4000,"y":1080},{"x":0,"y":1080}]</textarea>
-
-      <label>Occlusion polygons — voids for AI repair (JSON, optional)</label>
-      <textarea id="occlusions" rows="3">[]</textarea>
+      <label>Crop box — the panel's rectangle inside the master sheet (pixels)</label>
+      <div class="row4">
+        <div><label>X (left)</label><input id="cropX" type="number" value="0" /></div>
+        <div><label>Y (top)</label><input id="cropY" type="number" value="0" /></div>
+        <div><label>Width</label><input id="cropW" type="number" value="4000" /></div>
+        <div><label>Height</label><input id="cropH" type="number" value="1500" /></div>
+      </div>
+      <div class="hint">Where the panel (e.g. Driver Side) sits within the multi-view proof. From RestylePro automatically, or read off the proof for manual jobs.</div>
 
       <label>Webhook secret (x-panelpro-signature)</label>
       <input id="secret" placeholder="leave blank if worker has none" />
@@ -338,16 +342,19 @@
     });
 
     function buildManifest(includeUrl) {
-      const quad = parseOrThrow('quad', 'Source quad');
-      if (!Array.isArray(quad) || quad.length !== 4) throw new Error('Source quad must have exactly 4 points');
-      const occlusions = parseOrThrow('occlusions', 'Occlusions');
+      const cropBox = {
+        x: +$('cropX').value, y: +$('cropY').value,
+        width: +$('cropW').value, height: +$('cropH').value,
+      };
+      if (!(cropBox.width > 0) || !(cropBox.height > 0)) {
+        throw new Error('Crop box width and height must be greater than 0');
+      }
       const manifest = {
         panelId: $('panelId').value.trim(),
         physical: { widthInches: +$('w').value, heightInches: +$('h').value,
           dpi: +$('dpi').value, bleedInches: +$('bleed').value },
         dimensionSource: $('dimSource').value,
-        sourceQuad: quad,
-        occlusions,
+        cropBox,
       };
       if (includeUrl) {
         if (!$('masterUrl').value.trim()) throw new Error('Master artwork URL is required');

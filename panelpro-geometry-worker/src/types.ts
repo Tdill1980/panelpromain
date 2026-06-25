@@ -1,16 +1,11 @@
 /**
- * Shared contract types for the Panel-First extraction pipeline.
+ * Shared contract types for the flat-sheet extraction pipeline.
  *
- * Everything geometric is driven by the structural manifest that RestylePro
- * exports alongside the flat master artwork. The worker NEVER infers boundaries
- * from pixels — these types are the single source of truth for layout.
+ * RestylePro/DesignProAI exports a single master proof PNG containing every
+ * panel laid out flat. A job crops one rectangular panel region from that
+ * sheet, sizes it to exact print pixels, and mirror-extends the bleed. No
+ * perspective math, no boundary guessing — pure deterministic rectangles.
  */
-
-/** A 2D point in source-canvas pixel space (RestylePro design coordinates). */
-export interface Point {
-  x: number;
-  y: number;
-}
 
 /**
  * Provenance of the physical sizing metadata, surfaced on the operator console
@@ -18,6 +13,18 @@ export interface Point {
  * is an unverified/fallback path (⚠️) the operator should eyeball.
  */
 export type DimensionSource = 'database' | 'csv' | 'manual' | 'fallback' | 'unverified';
+
+/**
+ * A rectangular crop region into the master proof sheet, in master-pixel space.
+ * This is the panel boundary — delivered by RestylePro (automated) or entered by
+ * the operator (manual backup).
+ */
+export interface CropBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 /**
  * Physical dimensions of the destination panel. These — not any model — decide
@@ -35,46 +42,21 @@ export interface PanelPhysical {
 }
 
 /**
- * The four source-canvas corners that map onto the destination rectangle.
- * Order is fixed: top-left, top-right, bottom-right, bottom-left.
- */
-export type CornerQuad = [Point, Point, Point, Point];
-
-/**
- * An occlusion region — a physically hidden void on the vehicle/substrate
- * (door handle, mirror mount, wheel arch) expressed as a closed polygon in
- * DESTINATION pixel space. These are the ONLY areas AI is allowed to touch.
- */
-export interface OcclusionPolygon {
-  id: string;
-  /** Human label, e.g. "driver-door-handle". Used for audit logging only. */
-  label?: string;
-  /** Closed polygon ring in destination pixel coordinates. */
-  points: Point[];
-}
-
-/**
- * The structural manifest emitted by RestylePro. Companion to the flat master
- * artwork; carries crop geometry and occlusion data. Fully deterministic.
+ * The structural manifest emitted by RestylePro. Companion to the master proof
+ * sheet; carries the panel crop box and physical sizing. Fully deterministic.
  */
 export interface PanelManifest {
   panelId: string;
   /**
-   * URL of the raw, flattened master design canvas (downloaded via axios).
-   * Optional: omitted on the manual-upload backup route, where the master is
-   * delivered as a raw buffer instead (see {@link ExtractionJob.masterBytes}).
+   * URL of the master proof sheet (downloaded via axios). Optional: omitted on
+   * the manual-upload route, where the sheet is delivered as a raw buffer.
    */
   masterArtworkUrl?: string;
   physical: PanelPhysical;
+  /** Rectangular panel region to crop from the master sheet. */
+  cropBox: CropBox;
   /** Where the physical sizing came from. Defaults to 'unverified' if absent. */
   dimensionSource?: DimensionSource;
-  /**
-   * Source-canvas quad that defines the crop/warp. Mapped directly onto the
-   * computed destination rectangle via findHomography → warpPerspective.
-   */
-  sourceQuad: CornerQuad;
-  /** Voids to be repaired by sub-surface inpainting. May be empty. */
-  occlusions?: OcclusionPolygon[];
 }
 
 /** Fully resolved destination geometry derived from {@link PanelPhysical}. */
@@ -94,9 +76,8 @@ export interface ExtractionJob {
   /** Destination object path inside the Supabase Storage bucket. */
   outputPath: string;
   /**
-   * Raw master artwork bytes for the manual-upload backup route. When present,
-   * the pipeline ingests these directly and skips the RestylePro URL fetch —
-   * the deterministic geometry is otherwise identical.
+   * Raw master sheet bytes for the manual-upload backup route. When present,
+   * the pipeline ingests these directly and skips the RestylePro URL fetch.
    */
   masterBytes?: Buffer;
   /** Provenance of the master raster, for audit logging. */
@@ -131,6 +112,4 @@ export interface ExtractionResult {
   /** Object path of the small JPEG preview thumbnail, if one was generated. */
   previewPath?: string;
   qc: QcReport;
-  /** Number of occluded voids repaired by AI (0 when none present). */
-  inpaintedVoids: number;
 }

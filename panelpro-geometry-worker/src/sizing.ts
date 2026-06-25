@@ -1,9 +1,8 @@
 /**
  * Absolute sizing & precision math (RestylePro compatible).
  *
- * CRITICAL INVARIANT: no AI or vision model is ever permitted to choose canvas
- * dimensions. Output size is resolved deterministically from physical panel
- * data here, and nowhere else.
+ * CRITICAL INVARIANT: output size is resolved deterministically from physical
+ * panel data here, and nowhere else.
  *
  *   targetWidthPx  = round((widthInches  + bleed * 2) * dpi)
  *   targetHeightPx = round((heightInches + bleed * 2) * dpi)
@@ -13,21 +12,6 @@
 
 import { config } from './config';
 import type { DimensionSource, PanelPhysical, ResolvedDimensions } from './types';
-
-const DIMENSION_SOURCES: readonly DimensionSource[] = [
-  'database',
-  'csv',
-  'manual',
-  'fallback',
-  'unverified',
-];
-
-/** Coerce arbitrary input to a valid {@link DimensionSource}, defaulting safe. */
-export function normalizeDimensionSource(value: unknown): DimensionSource {
-  return DIMENSION_SOURCES.includes(value as DimensionSource)
-    ? (value as DimensionSource)
-    : 'unverified';
-}
 
 export function resolveDimensions(physical: PanelPhysical): ResolvedDimensions {
   const dpi = physical.dpi ?? config.geometry.defaultDpi;
@@ -45,7 +29,28 @@ export function resolveDimensions(physical: PanelPhysical): ResolvedDimensions {
   return { dpi, bleedInches, targetWidthPx, targetHeightPx };
 }
 
-/** Bleed thickness expressed in destination pixels (for masking the perimeter). */
+/** Bleed thickness expressed in destination pixels (per edge). */
 export function bleedPx(dims: ResolvedDimensions): number {
   return Math.round(dims.bleedInches * dims.dpi);
+}
+
+/** The "live" panel area in pixels, i.e. the artwork excluding the bleed border. */
+export function liveDimensions(dims: ResolvedDimensions): { width: number; height: number } {
+  const b = bleedPx(dims);
+  return { width: dims.targetWidthPx - 2 * b, height: dims.targetHeightPx - 2 * b };
+}
+
+const DIMENSION_SOURCES: readonly DimensionSource[] = [
+  'database',
+  'csv',
+  'manual',
+  'fallback',
+  'unverified',
+];
+
+/** Coerce arbitrary input to a valid {@link DimensionSource}, defaulting safe. */
+export function normalizeDimensionSource(value: unknown): DimensionSource {
+  return DIMENSION_SOURCES.includes(value as DimensionSource)
+    ? (value as DimensionSource)
+    : 'unverified';
 }

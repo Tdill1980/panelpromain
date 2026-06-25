@@ -18,8 +18,9 @@
 
 import axios from 'axios';
 import sharp from 'sharp';
-import type { CornerQuad, QcMetric, QcReport, ResolvedDimensions } from './types';
+import type { CropBox, QcMetric, QcReport, ResolvedDimensions } from './types';
 import { config } from './config';
+import { bleedPx, liveDimensions } from './sizing';
 
 /** Side length the comparison rasters are normalized to before metrics. */
 const COMPARE_LONG_EDGE = 1024;
@@ -38,14 +39,14 @@ export class QcGateError extends Error {
 }
 
 export interface QcInput {
-  /** Exported 8-bit RGBA PNG candidate. */
+  /** Exported 8-bit RGBA PNG candidate (panel with bleed). */
   candidate: Buffer;
   /** Reference master bytes (manual-upload route). Takes precedence over URL. */
   referenceBytes?: Buffer;
   /** URL of the original RestylePro master used as the reference. */
   referenceUrl?: string;
-  /** Source quad used for the warp (reserved for edge-error registration). */
-  sourceQuad: CornerQuad;
+  /** The panel crop region within the master sheet. */
+  cropBox: CropBox;
   dims: ResolvedDimensions;
 }
 
@@ -56,12 +57,32 @@ interface Plane {
 }
 
 export async function runQualityGate(input: QcInput): Promise<QcReport> {
-  const reference = await loadReference(input);
+  const masterBytes = await loadReference(input);
+  const bleed = bleedPx(input.dims);
+  const live = liveDimensions(input.dims);
+  const c = input.cropBox;
 
-  // Normalize both images to a common comparison size (reference resized to the
-  // candidate's aspect so structural metrics align).
-  const candidate = await toComparePlane(input.candidate);
-  const refPlane = await toComparePlane(reference, candidate.width, candidate.height);
+  // Reference = the exact source region of the master sheet.
+  const refRegion = await sharp(masterBytes, { limitInputPixels: false })
+    .extract({
+      left: Math.round(c.x),
+      top: Math.round(c.y),
+      width: Math.round(c.width),
+      height: Math.round(c.height),
+    })
+    .png()
+    .toBuffer();
+
+  // Candidate = the produced panel minus its bleed border (the live artwork),
+  // so we compare like-for-like and the mirrored bleed doesn't skew the metrics.
+  const candRegion = await sharp(input.candidate, { limitInputPixels: false })
+    .extract({ left: bleed, top: bleed, width: live.width, height: live.height })
+    .png()
+    .toBuffer();
+
+  // Normalize both to a common comparison size so structural metrics align.
+  const candidate = await toComparePlane(candRegion);
+  const refPlane = await toComparePlane(refRegion, candidate.width, candidate.height);
 
   const metrics: QcMetric[] = [
     deltaEMetric(candidate, refPlane),
@@ -70,7 +91,7 @@ export async function runQualityGate(input: QcInput): Promise<QcReport> {
   ];
 
   if (config.qc.enforceOcr) {
-    metrics.push(await ocrMetric(input.candidate, reference));
+    metrics.push(await ocrMetric(candRegion, refRegion));
   }
 
   const passed = metrics.every((m) => m.passed);
