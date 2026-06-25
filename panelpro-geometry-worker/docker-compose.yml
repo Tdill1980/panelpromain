@@ -29,9 +29,6 @@ services:
     # Comment it out entirely to let the worker use all host RAM + swap.
     mem_limit: 6g
     mem_reservation: 2g
-    # Allow bursting into host swap when a job spikes (add swap on the Droplet —
-    # it has none by default: see DEPLOY notes in README).
-    mem_swappiness: 60
 
     healthcheck:
       test: ["CMD", "node", "scripts/healthcheck.js"]

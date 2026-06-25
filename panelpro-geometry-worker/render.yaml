@@ -20,7 +20,7 @@ services:
     autoDeploy: true
     envVars:
       - key: NODE_VERSION
-        value: "20"
+        value: "22"
       # sync:false → Render prompts for these and never stores them in the repo.
       - key: SUPABASE_URL
         sync: false
