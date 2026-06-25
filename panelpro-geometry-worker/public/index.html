@@ -395,6 +395,12 @@
       finally { $('submitBtn').disabled = false; }
     }
 
+    // Remember the webhook secret in this browser so you only type it once.
+    const SECRET_KEY = 'pp_webhook_secret';
+    const savedSecret = localStorage.getItem(SECRET_KEY);
+    if (savedSecret) $('secret').value = savedSecret;
+    $('secret').addEventListener('input', () => localStorage.setItem(SECRET_KEY, $('secret').value));
+
     $('submitBtn').addEventListener('click', submit);
     $('refreshBtn').addEventListener('click', refreshJobs);
     health(); previewDims(); refreshJobs();
