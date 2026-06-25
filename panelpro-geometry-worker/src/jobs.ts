@@ -7,7 +7,7 @@
  * purely observability for the operator console.
  */
 
-import type { DimensionSource, ExtractionResult } from './types';
+import type { DimensionSource, ExtractionResult } from './types.js';
 
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'qc_rejected' | 'failed';
 
