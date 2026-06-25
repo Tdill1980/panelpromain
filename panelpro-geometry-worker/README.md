@@ -54,14 +54,21 @@ never uploaded.
 ```
 panelpro-geometry-worker/
 ├── src/
-│   ├── index.ts        # Express webhook listener / job dispatcher
+│   ├── index.ts        # Express dispatcher: URL webhook + manual-upload route
 │   ├── processor.ts    # OpenCV geometry warp & 16-bit Sharp execution
 │   ├── qc.ts           # Strict Delta-E & SSIM gate metrics
 │   ├── inpaint.ts      # Sub-surface AI repair (occlusion-masked only)
 │   ├── sizing.ts       # Absolute dimension math
 │   ├── supabase.ts     # Storage connector
+│   ├── jobs.ts         # In-memory job status registry
 │   ├── config.ts       # Validated runtime config + QC thresholds
 │   └── types.ts        # Shared manifest / job contracts
+├── public/
+│   └── index.html      # Operator console (URL + file-upload UI)
+├── scripts/
+│   └── healthcheck.js  # Container HEALTHCHECK probe
+├── Dockerfile          # Host-agnostic production image (builds OpenCV bindings)
+├── .dockerignore
 ├── package.json
 ├── tsconfig.json
 └── .env.example
@@ -76,7 +83,21 @@ npm run build && npm start
 # dev: npm run dev
 ```
 
-POST a job:
+### Deploy (Docker, host-agnostic)
+
+```bash
+docker build -t panelpro-geometry-worker .
+docker run -p 8080:8080 --env-file .env panelpro-geometry-worker
+```
+
+The image installs `libopencv-dev` and compiles the native `opencv4nodejs`
+bindings during build, so no OpenCV setup is needed on the host. Hand the same
+Dockerfile to Render, Railway, Fly.io, ECS, Cloud Run, or your own VM. Give the
+container generous memory — jobs hold full `30000 × 9150` rasters.
+
+## Submitting jobs
+
+### Automated route (RestylePro URL)
 
 ```bash
 curl -X POST http://localhost:8080/webhook/extract \
@@ -101,8 +122,36 @@ curl -X POST http://localhost:8080/webhook/extract \
   }'
 ```
 
-The worker responds `202 Accepted` and processes out-of-band; completion and QC
-results are emitted as structured JSON logs.
+### Manual-upload backup route (standalone 2D proof)
+
+When the RestylePro sync is unavailable — dropped connection, canvas error, or a
+designer emails a standalone high-res proof — upload the file directly. You
+supply the sizing metadata (or pick a panel template in the UI); the worker
+bypasses the URL fetch and runs the **identical** deterministic pipeline on the
+uploaded buffer.
+
+```bash
+curl -X POST http://localhost:8080/webhook/extract/upload \
+  -H 'x-panelpro-signature: <WEBHOOK_SECRET>' \
+  -F 'artwork=@/path/to/proof.png' \
+  -F 'payload={
+        "jobId":"job_manual_1",
+        "outputPath":"panels/job_manual_1.png",
+        "manifest":{
+          "panelId":"drv-side",
+          "physical":{"widthInches":190,"heightInches":51,"dpi":150,"bleedInches":5},
+          "sourceQuad":[{"x":0,"y":0},{"x":4000,"y":0},{"x":4000,"y":1080},{"x":0,"y":1080}],
+          "occlusions":[]
+        }
+      }'
+```
+
+In the operator console, flip the **Artwork source** toggle to *Manual upload*,
+drop the proof in, pick a panel template, and run — same `30000 × 9150`
+lossless output.
+
+Either route responds `202 Accepted` and processes out-of-band; completion and
+QC results are emitted as structured JSON logs and surfaced in the UI.
 
 ## Notes on native dependencies
 - **`opencv4nodejs`** compiles native OpenCV bindings and needs OpenCV (≥4.x)

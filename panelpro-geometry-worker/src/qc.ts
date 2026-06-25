@@ -40,8 +40,10 @@ export class QcGateError extends Error {
 export interface QcInput {
   /** Exported 8-bit RGBA PNG candidate. */
   candidate: Buffer;
+  /** Reference master bytes (manual-upload route). Takes precedence over URL. */
+  referenceBytes?: Buffer;
   /** URL of the original RestylePro master used as the reference. */
-  referenceUrl: string;
+  referenceUrl?: string;
   /** Source quad used for the warp (reserved for edge-error registration). */
   sourceQuad: CornerQuad;
   dims: ResolvedDimensions;
@@ -54,7 +56,7 @@ interface Plane {
 }
 
 export async function runQualityGate(input: QcInput): Promise<QcReport> {
-  const reference = await loadReference(input.referenceUrl);
+  const reference = await loadReference(input);
 
   // Normalize both images to a common comparison size (reference resized to the
   // candidate's aspect so structural metrics align).
@@ -79,7 +81,10 @@ export async function runQualityGate(input: QcInput): Promise<QcReport> {
 // Loading / normalization
 // ────────────────────────────────────────────────────────────────────────────
 
-async function loadReference(url: string): Promise<Buffer> {
+async function loadReference(input: QcInput): Promise<Buffer> {
+  if (input.referenceBytes && input.referenceBytes.length > 0) return input.referenceBytes;
+  const url = input.referenceUrl;
+  if (!url) throw new Error('QC needs either referenceBytes or referenceUrl.');
   const res = await axios.get<ArrayBuffer>(url, {
     responseType: 'arraybuffer',
     maxContentLength: Infinity,

@@ -52,8 +52,12 @@ export interface OcclusionPolygon {
  */
 export interface PanelManifest {
   panelId: string;
-  /** URL of the raw, flattened master design canvas (downloaded via axios). */
-  masterArtworkUrl: string;
+  /**
+   * URL of the raw, flattened master design canvas (downloaded via axios).
+   * Optional: omitted on the manual-upload backup route, where the master is
+   * delivered as a raw buffer instead (see {@link ExtractionJob.masterBytes}).
+   */
+  masterArtworkUrl?: string;
   physical: PanelPhysical;
   /**
    * Source-canvas quad that defines the crop/warp. Mapped directly onto the
@@ -80,6 +84,14 @@ export interface ExtractionJob {
   manifest: PanelManifest;
   /** Destination object path inside the Supabase Storage bucket. */
   outputPath: string;
+  /**
+   * Raw master artwork bytes for the manual-upload backup route. When present,
+   * the pipeline ingests these directly and skips the RestylePro URL fetch —
+   * the deterministic geometry is otherwise identical.
+   */
+  masterBytes?: Buffer;
+  /** Provenance of the master raster, for audit logging. */
+  source?: 'restylepro-url' | 'manual-upload';
 }
 
 /** Result of a single QC metric evaluation. */

@@ -26,9 +26,18 @@
     .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
       color: var(--muted); margin: 0 0 14px; }
     label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
-    input, textarea { width: 100%; background: var(--panel2); border: 1px solid var(--line);
+    input, textarea, select { width: 100%; background: var(--panel2); border: 1px solid var(--line);
       color: var(--txt); border-radius: 6px; padding: 8px 10px; font-size: 13px;
       font-family: inherit; }
+    .seg { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 6px;
+      overflow: hidden; }
+    .seg-btn { flex: 1; background: var(--panel2); border: 0; border-radius: 0; color: var(--muted);
+      padding: 8px; font-weight: 500; }
+    .seg-btn.active { background: var(--accent); color: #fff; }
+    .dropzone { border: 1.5px dashed var(--line); border-radius: 8px; padding: 22px;
+      text-align: center; color: var(--muted); cursor: pointer; background: var(--panel2);
+      transition: border-color .15s, color .15s; }
+    .dropzone.drag, .dropzone.loaded { border-color: var(--accent); color: var(--txt); }
     textarea { font-family: var(--mono); font-size: 12px; resize: vertical; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .row4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
@@ -74,13 +83,38 @@
       <label>Output path (Supabase bucket)</label>
       <input id="outputPath" value="panels/job_demo_1.png" />
 
-      <label>Master artwork URL (flat RestylePro canvas)</label>
-      <input id="masterUrl" placeholder="https://…/master.png" />
+      <label>Artwork source</label>
+      <div class="seg" id="sourceSeg">
+        <button type="button" class="seg-btn active" data-mode="url">RestylePro URL</button>
+        <button type="button" class="seg-btn" data-mode="upload">Manual upload (backup)</button>
+      </div>
+
+      <div id="urlBlock">
+        <label>Master artwork URL (flat RestylePro canvas)</label>
+        <input id="masterUrl" placeholder="https://…/master.png" />
+      </div>
+
+      <div id="uploadBlock" style="display:none">
+        <label>Drop a standalone 2D proof (PNG / TIFF / high-res raster)</label>
+        <div id="dropzone" class="dropzone">
+          <span id="dropLabel">Click to choose, or drop a file here</span>
+          <input id="fileInput" type="file" accept="image/png,image/tiff,image/jpeg" hidden />
+        </div>
+        <div class="hint">Bypasses the RestylePro database fetch — the buffer is fed straight into the OpenCV warp.</div>
+      </div>
 
       <label>Panel ID</label>
       <input id="panelId" value="drv-side" />
 
       <h2 style="margin-top:18px">Physical panel (absolute sizing)</h2>
+      <label>Panel target template</label>
+      <select id="preset">
+        <option value="">— custom —</option>
+        <option value="190,51,150,5" selected>Driver side (190″ × 51″)</option>
+        <option value="190,51,150,5">Passenger side (190″ × 51″)</option>
+        <option value="80,51,150,5">Rear door (80″ × 51″)</option>
+        <option value="96,48,150,5">Hood (96″ × 48″)</option>
+      </select>
       <div class="row4">
         <div><label>Width (in)</label><input id="w" type="number" value="190" /></div>
         <div><label>Height (in)</label><input id="h" type="number" value="51" /></div>
@@ -215,33 +249,87 @@
       catch { throw new Error(`${label} is not valid JSON`); }
     }
 
+    // ── Source mode (URL vs manual upload) ───────────────────────────────────
+    let mode = 'url';
+    let uploadFile = null;
+
+    document.querySelectorAll('.seg-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        mode = btn.dataset.mode;
+        document.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('active', b === btn));
+        $('urlBlock').style.display = mode === 'url' ? '' : 'none';
+        $('uploadBlock').style.display = mode === 'upload' ? '' : 'none';
+      });
+    });
+
+    // ── Dropzone ─────────────────────────────────────────────────────────────
+    const dz = $('dropzone');
+    const setFile = (file) => {
+      uploadFile = file;
+      if (file) {
+        dz.classList.add('loaded');
+        $('dropLabel').textContent = `${file.name} (${(file.size / 1048576).toFixed(1)} MB)`;
+      }
+    };
+    dz.addEventListener('click', () => $('fileInput').click());
+    $('fileInput').addEventListener('change', (e) => setFile(e.target.files[0] || null));
+    ['dragover', 'dragenter'].forEach((ev) =>
+      dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach((ev) =>
+      dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
+    dz.addEventListener('drop', (e) => { if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+
+    // ── Panel target presets ─────────────────────────────────────────────────
+    $('preset').addEventListener('change', (e) => {
+      if (!e.target.value) return;
+      const [w, h, dpi, bleed] = e.target.value.split(',');
+      $('w').value = w; $('h').value = h; $('dpi').value = dpi; $('bleed').value = bleed;
+      previewDims();
+    });
+
+    function buildManifest(includeUrl) {
+      const quad = parseOrThrow('quad', 'Source quad');
+      if (!Array.isArray(quad) || quad.length !== 4) throw new Error('Source quad must have exactly 4 points');
+      const occlusions = parseOrThrow('occlusions', 'Occlusions');
+      const manifest = {
+        panelId: $('panelId').value.trim(),
+        physical: { widthInches: +$('w').value, heightInches: +$('h').value,
+          dpi: +$('dpi').value, bleedInches: +$('bleed').value },
+        sourceQuad: quad,
+        occlusions,
+      };
+      if (includeUrl) {
+        if (!$('masterUrl').value.trim()) throw new Error('Master artwork URL is required');
+        manifest.masterArtworkUrl = $('masterUrl').value.trim();
+      }
+      return manifest;
+    }
+
     async function submit() {
       $('formErr').textContent = '';
-      let payload;
-      try {
-        const quad = parseOrThrow('quad', 'Source quad');
-        if (!Array.isArray(quad) || quad.length !== 4) throw new Error('Source quad must have exactly 4 points');
-        const occlusions = parseOrThrow('occlusions', 'Occlusions');
-        if (!$('masterUrl').value.trim()) throw new Error('Master artwork URL is required');
-        payload = {
-          jobId: $('jobId').value.trim(),
-          outputPath: $('outputPath').value.trim(),
-          manifest: {
-            panelId: $('panelId').value.trim(),
-            masterArtworkUrl: $('masterUrl').value.trim(),
-            physical: { widthInches: +$('w').value, heightInches: +$('h').value,
-              dpi: +$('dpi').value, bleedInches: +$('bleed').value },
-            sourceQuad: quad,
-            occlusions,
-          },
-        };
-      } catch (e) { $('formErr').textContent = e.message; return; }
+      const jobId = $('jobId').value.trim();
+      const outputPath = $('outputPath').value.trim();
 
       $('submitBtn').disabled = true;
       try {
-        const headers = { 'content-type': 'application/json' };
+        const headers = {};
         if ($('secret').value.trim()) headers['x-panelpro-signature'] = $('secret').value.trim();
-        const r = await fetch('/webhook/extract', { method: 'POST', headers, body: JSON.stringify(payload) });
+
+        let r;
+        if (mode === 'upload') {
+          if (!uploadFile) throw new Error('Choose a proof file to upload');
+          const manifest = buildManifest(false);
+          const form = new FormData();
+          form.append('artwork', uploadFile);
+          form.append('payload', JSON.stringify({ jobId, outputPath, manifest }));
+          r = await fetch('/webhook/extract/upload', { method: 'POST', headers, body: form });
+        } else {
+          const manifest = buildManifest(true);
+          headers['content-type'] = 'application/json';
+          r = await fetch('/webhook/extract', {
+            method: 'POST', headers, body: JSON.stringify({ jobId, outputPath, manifest }),
+          });
+        }
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
         pollJob(j.jobId);
