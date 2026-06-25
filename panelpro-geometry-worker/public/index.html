@@ -55,6 +55,9 @@
     .pill.queued, .pill.processing { background: #2b3a52; color: #aecbff; }
     .pill.completed { background: #16361f; color: var(--ok); }
     .pill.qc_rejected, .pill.failed { background: #3a1717; color: var(--bad); }
+    .pill.src-ok { background: #16361f; color: var(--ok); }
+    .pill.src-warn { background: #3a3417; color: var(--warn); }
+    .mono { font-family: var(--mono); }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-weight: 500; }
@@ -115,6 +118,15 @@
         <option value="80,51,150,5">Rear door (80″ × 51″)</option>
         <option value="96,48,150,5">Hood (96″ × 48″)</option>
       </select>
+
+      <label>Dimension source (verification tag)</label>
+      <select id="dimSource">
+        <option value="database">database — verified ✓</option>
+        <option value="csv">csv — verified ✓</option>
+        <option value="manual" selected>manual — unverified ⚠️</option>
+        <option value="fallback">fallback — unverified ⚠️</option>
+      </select>
+
       <div class="row4">
         <div><label>Width (in)</label><input id="w" type="number" value="190" /></div>
         <div><label>Height (in)</label><input id="h" type="number" value="51" /></div>
@@ -152,8 +164,8 @@
 
       <h2 style="margin-top:22px">Recent jobs</h2>
       <table>
-        <thead><tr><th>Job</th><th>Status</th><th>Output</th></tr></thead>
-        <tbody id="jobRows"><tr><td colspan="3" class="muted">—</td></tr></tbody>
+        <thead><tr><th>Job</th><th>Status</th><th>Dimensions (W×H)</th><th>Source</th><th>Output</th></tr></thead>
+        <tbody id="jobRows"><tr><td colspan="5" class="muted">—</td></tr></tbody>
       </table>
     </section>
   </main>
@@ -193,14 +205,32 @@
     }
     ['w','h','dpi','bleed'].forEach((id) => $(id).addEventListener('input', previewDims));
 
+    // Verification tag: trusted sources are green, fallback/unverified ⚠️ amber.
+    function sourceBadge(src) {
+      const trusted = src === 'database' || src === 'csv';
+      const cls = trusted ? 'src-ok' : 'src-warn';
+      const mark = trusted ? '✓' : '⚠️';
+      return `<span class="pill ${cls}">${mark} ${src || 'unverified'}</span>`;
+    }
+    function dimsText(m) {
+      return m && m.targetWidthPx ? `${m.targetWidthPx} × ${m.targetHeightPx} px` : '—';
+    }
+
     function renderCurrent(rec) {
       if (!rec) { $('current').innerHTML = '<span class="muted">No job submitted yet.</span>'; return; }
+      const m = rec.meta || (rec.result && {
+        targetWidthPx: rec.result.dimensions.targetWidthPx,
+        targetHeightPx: rec.result.dimensions.targetHeightPx,
+        dimensionSource: rec.result.dimensionSource,
+      });
       let html = `<div><span class="pill ${rec.status}">${rec.status}</span>
         <span class="muted" style="margin-left:8px">${rec.jobId}</span></div>`;
+      if (m) {
+        html += `<div style="margin-top:12px" class="mono">${dimsText(m)} (W×H)
+          &nbsp; ${sourceBadge(m.dimensionSource)}</div>`;
+      }
       if (rec.result) {
-        const d = rec.result.dimensions;
-        html += `<div style="margin-top:12px;font-family:var(--mono)">
-          ${d.targetWidthPx}×${d.targetHeightPx}px · voids repaired: ${rec.result.inpaintedVoids}</div>`;
+        html += `<div class="mono" style="margin-top:6px">voids repaired: ${rec.result.inpaintedVoids}</div>`;
         html += `<div class="hint">Stored at: ${rec.result.storagePath}</div>`;
         html += '<table style="margin-top:12px"><thead><tr><th>QC metric</th><th>Value</th><th>Limit</th><th></th></tr></thead><tbody>';
         for (const m of rec.result.qc.metrics) {
@@ -239,8 +269,10 @@
         const r = await fetch('/jobs'); const jobs = await r.json();
         $('jobRows').innerHTML = jobs.length ? jobs.map((j) =>
           `<tr><td>${j.jobId}</td><td><span class="pill ${j.status}">${j.status}</span></td>
+           <td class="mono">${dimsText(j.meta)}</td>
+           <td>${j.meta ? sourceBadge(j.meta.dimensionSource) : '—'}</td>
            <td class="muted">${j.result ? j.result.storagePath : '—'}</td></tr>`).join('')
-          : '<tr><td colspan="3" class="muted">No jobs yet.</td></tr>';
+          : '<tr><td colspan="5" class="muted">No jobs yet.</td></tr>';
       } catch {}
     }
 
@@ -284,6 +316,8 @@
       if (!e.target.value) return;
       const [w, h, dpi, bleed] = e.target.value.split(',');
       $('w').value = w; $('h').value = h; $('dpi').value = dpi; $('bleed').value = bleed;
+      // A picked template is a verified panel record.
+      $('dimSource').value = 'database';
       previewDims();
     });
 
@@ -295,6 +329,7 @@
         panelId: $('panelId').value.trim(),
         physical: { widthInches: +$('w').value, heightInches: +$('h').value,
           dpi: +$('dpi').value, bleedInches: +$('bleed').value },
+        dimensionSource: $('dimSource').value,
         sourceQuad: quad,
         occlusions,
       };

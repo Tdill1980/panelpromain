@@ -12,7 +12,22 @@
  */
 
 import { config } from './config';
-import type { PanelPhysical, ResolvedDimensions } from './types';
+import type { DimensionSource, PanelPhysical, ResolvedDimensions } from './types';
+
+const DIMENSION_SOURCES: readonly DimensionSource[] = [
+  'database',
+  'csv',
+  'manual',
+  'fallback',
+  'unverified',
+];
+
+/** Coerce arbitrary input to a valid {@link DimensionSource}, defaulting safe. */
+export function normalizeDimensionSource(value: unknown): DimensionSource {
+  return DIMENSION_SOURCES.includes(value as DimensionSource)
+    ? (value as DimensionSource)
+    : 'unverified';
+}
 
 export function resolveDimensions(physical: PanelPhysical): ResolvedDimensions {
   const dpi = physical.dpi ?? config.geometry.defaultDpi;

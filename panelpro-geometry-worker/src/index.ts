@@ -16,8 +16,8 @@ import multer from 'multer';
 import { config, assertRuntimeConfig } from './config';
 import { executeMechanicalExtraction } from './processor';
 import { QcGateError } from './qc';
-import { resolveDimensions } from './sizing';
-import { createJob, getJob, listJobs, updateJob } from './jobs';
+import { resolveDimensions, normalizeDimensionSource } from './sizing';
+import { createJob, getJob, listJobs, updateJob, type JobMeta } from './jobs';
 import type { ExtractionJob, PanelManifest } from './types';
 
 const app = express();
@@ -96,7 +96,7 @@ app.post('/webhook/extract', (req: Request, res: Response) => {
   }
 
   // Accept and process out-of-band so a 30000×9150 warp never blocks the socket.
-  createJob(job.jobId);
+  createJob(job.jobId, metaFor(job));
   res.status(202).json({ accepted: true, jobId: job.jobId });
   void dispatch(job);
 });
@@ -134,10 +134,25 @@ app.post('/webhook/extract/upload', upload.single('artwork'), (req: Request, res
     return;
   }
 
-  createJob(job.jobId);
+  createJob(job.jobId, metaFor(job));
   res.status(202).json({ accepted: true, jobId: job.jobId, source: 'manual-upload' });
   void dispatch(job);
 });
+
+/**
+ * Resolve the sizing + provenance shown on the operator card the moment a job
+ * is accepted. Defensive: bad physical dimensions still fail loudly later in
+ * the pipeline, but must not block the 202 ACK here.
+ */
+function metaFor(job: ExtractionJob): JobMeta {
+  const dimensionSource = normalizeDimensionSource(job.manifest.dimensionSource);
+  try {
+    const d = resolveDimensions(job.manifest.physical);
+    return { targetWidthPx: d.targetWidthPx, targetHeightPx: d.targetHeightPx, dimensionSource };
+  } catch {
+    return { targetWidthPx: 0, targetHeightPx: 0, dimensionSource };
+  }
+}
 
 async function dispatch(job: ExtractionJob): Promise<void> {
   const started = Date.now();

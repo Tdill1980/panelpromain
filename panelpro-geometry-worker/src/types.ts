@@ -13,6 +13,13 @@ export interface Point {
 }
 
 /**
+ * Provenance of the physical sizing metadata, surfaced on the operator console
+ * as a verification tag. `database`/`csv` are trusted (green); everything else
+ * is an unverified/fallback path (⚠️) the operator should eyeball.
+ */
+export type DimensionSource = 'database' | 'csv' | 'manual' | 'fallback' | 'unverified';
+
+/**
  * Physical dimensions of the destination panel. These — not any model — decide
  * the output canvas size via absolute pixel math (see sizing.ts).
  */
@@ -59,6 +66,8 @@ export interface PanelManifest {
    */
   masterArtworkUrl?: string;
   physical: PanelPhysical;
+  /** Where the physical sizing came from. Defaults to 'unverified' if absent. */
+  dimensionSource?: DimensionSource;
   /**
    * Source-canvas quad that defines the crop/warp. Mapped directly onto the
    * computed destination rectangle via findHomography → warpPerspective.
@@ -115,6 +124,8 @@ export interface ExtractionResult {
   jobId: string;
   panelId: string;
   dimensions: ResolvedDimensions;
+  /** Provenance of the sizing that produced {@link dimensions}. */
+  dimensionSource: DimensionSource;
   /** Public/object path written to Supabase Storage. */
   storagePath: string;
   qc: QcReport;
