@@ -10,10 +10,13 @@
  * coupling. It assumes a memory-unconstrained container.
  */
 
+import path from 'node:path';
 import express, { type Request, type Response } from 'express';
 import { config, assertRuntimeConfig } from './config';
 import { executeMechanicalExtraction } from './processor';
 import { QcGateError } from './qc';
+import { resolveDimensions } from './sizing';
+import { createJob, getJob, listJobs, updateJob } from './jobs';
 import type { ExtractionJob, PanelManifest } from './types';
 
 const app = express();
@@ -21,8 +24,47 @@ const app = express();
 // Large manifests are fine; the raster itself is fetched by URL, not posted.
 app.use(express.json({ limit: '8mb' }));
 
+// Operator console (static SPA). Not part of the print pipeline — observability
+// only. Served from the repo-root /public dir (one level up from dist/ or src/).
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
 app.get('/healthz', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'panelpro-geometry-worker' });
+});
+
+/**
+ * Preview the deterministic output dimensions for a panel without running a
+ * job. Lets the UI confirm the absolute pixel math before dispatch.
+ */
+app.post('/preview/dimensions', (req: Request, res: Response) => {
+  try {
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    res.json(
+      resolveDimensions({
+        widthInches: Number(b.widthInches),
+        heightInches: Number(b.heightInches),
+        dpi: b.dpi == null ? undefined : Number(b.dpi),
+        bleedInches: b.bleedInches == null ? undefined : Number(b.bleedInches),
+      }),
+    );
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+/** Poll a single job's status (used by the operator UI). */
+app.get('/jobs/:id', (req: Request, res: Response) => {
+  const rec = getJob(req.params.id ?? '');
+  if (!rec) {
+    res.status(404).json({ error: 'job not found' });
+    return;
+  }
+  res.json(rec);
+});
+
+/** Recent jobs for the console list. */
+app.get('/jobs', (_req: Request, res: Response) => {
+  res.json(listJobs());
 });
 
 /**
@@ -44,14 +86,17 @@ app.post('/webhook/extract', (req: Request, res: Response) => {
   }
 
   // Accept and process out-of-band so a 30000×9150 warp never blocks the socket.
+  createJob(job.jobId);
   res.status(202).json({ accepted: true, jobId: job.jobId });
   void dispatch(job);
 });
 
 async function dispatch(job: ExtractionJob): Promise<void> {
   const started = Date.now();
+  updateJob(job.jobId, { status: 'processing' });
   try {
     const result = await executeMechanicalExtraction(job);
+    updateJob(job.jobId, { status: 'completed', result });
     console.log(
       JSON.stringify({
         level: 'info',
@@ -68,17 +113,22 @@ async function dispatch(job: ExtractionJob): Promise<void> {
   } catch (err) {
     if (err instanceof QcGateError) {
       // Strict gate halted the job — do NOT publish a degraded print.
+      const failures = err.report.metrics
+        .filter((m) => !m.passed)
+        .map((m) => ({ name: m.name, value: m.value, threshold: m.threshold }));
+      updateJob(err.jobId, { status: 'qc_rejected', failures, error: err.message });
       console.error(
         JSON.stringify({
           level: 'error',
           msg: 'extraction.qc_rejected',
           jobId: err.jobId,
-          failures: err.report.metrics.filter((m) => !m.passed),
+          failures,
           ms: Date.now() - started,
         }),
       );
       return;
     }
+    updateJob(job.jobId, { status: 'failed', error: (err as Error).message });
     console.error(
       JSON.stringify({
         level: 'error',

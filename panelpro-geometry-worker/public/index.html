@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PanelPro Geometry Worker — Operator Console</title>
+  <style>
+    :root {
+      --bg: #0c0f14; --panel: #151a22; --panel2: #1c232e; --line: #28303c;
+      --txt: #e6edf3; --muted: #8b97a7; --accent: #4f8cff; --ok: #2ecc71;
+      --warn: #f1c40f; --bad: #ff5d5d; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--txt);
+      font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    header { padding: 18px 24px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: baseline; gap: 12px; }
+    header h1 { font-size: 16px; margin: 0; }
+    header .sub { color: var(--muted); font-size: 12px; }
+    header .dot { margin-left: auto; font-size: 12px; color: var(--muted); }
+    main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 24px;
+      max-width: 1200px; margin: 0 auto; }
+    @media (max-width: 880px) { main { grid-template-columns: 1fr; } }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+      padding: 18px; }
+    .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--muted); margin: 0 0 14px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+    input, textarea { width: 100%; background: var(--panel2); border: 1px solid var(--line);
+      color: var(--txt); border-radius: 6px; padding: 8px 10px; font-size: 13px;
+      font-family: inherit; }
+    textarea { font-family: var(--mono); font-size: 12px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .row4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
+    button { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+      padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    button.secondary { background: var(--panel2); border: 1px solid var(--line); color: var(--txt); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    .actions { display: flex; gap: 10px; margin-top: 16px; }
+    .dims { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+      padding: 14px; margin-top: 14px; font-family: var(--mono); }
+    .dims .big { font-size: 22px; color: var(--accent); }
+    .dims .muted { color: var(--muted); font-size: 12px; }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11px;
+      font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+    .pill.queued, .pill.processing { background: #2b3a52; color: #aecbff; }
+    .pill.completed { background: #16361f; color: var(--ok); }
+    .pill.qc_rejected, .pill.failed { background: #3a1717; color: var(--bad); }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 500; }
+    .metric-ok { color: var(--ok); } .metric-bad { color: var(--bad); }
+    pre { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+      padding: 12px; overflow: auto; font-size: 11.5px; max-height: 280px; }
+    .hint { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+    .err { color: var(--bad); font-size: 12px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>PanelPro Geometry Worker</h1>
+    <span class="sub">Panel-First pre-press extraction · operator console</span>
+    <span class="dot" id="health">● checking…</span>
+  </header>
+
+  <main>
+    <!-- ── Job composer ──────────────────────────────────────────────────── -->
+    <section class="card">
+      <h2>1 · Compose extraction job</h2>
+
+      <label>Job ID</label>
+      <input id="jobId" value="job_demo_1" />
+
+      <label>Output path (Supabase bucket)</label>
+      <input id="outputPath" value="panels/job_demo_1.png" />
+
+      <label>Master artwork URL (flat RestylePro canvas)</label>
+      <input id="masterUrl" placeholder="https://…/master.png" />
+
+      <label>Panel ID</label>
+      <input id="panelId" value="drv-side" />
+
+      <h2 style="margin-top:18px">Physical panel (absolute sizing)</h2>
+      <div class="row4">
+        <div><label>Width (in)</label><input id="w" type="number" value="190" /></div>
+        <div><label>Height (in)</label><input id="h" type="number" value="51" /></div>
+        <div><label>DPI</label><input id="dpi" type="number" value="150" /></div>
+        <div><label>Bleed (in)</label><input id="bleed" type="number" value="5" /></div>
+      </div>
+
+      <div class="dims" id="dimsBox">
+        <div class="big" id="dimsBig">—</div>
+        <div class="muted" id="dimsFormula">target pixels (computed deterministically)</div>
+      </div>
+
+      <label>Source quad — 4 points TL,TR,BR,BL (JSON)</label>
+      <textarea id="quad" rows="3">[{"x":0,"y":0},{"x":4000,"y":0},{"x":4000,"y":1080},{"x":0,"y":1080}]</textarea>
+
+      <label>Occlusion polygons — voids for AI repair (JSON, optional)</label>
+      <textarea id="occlusions" rows="3">[]</textarea>
+
+      <label>Webhook secret (x-panelpro-signature)</label>
+      <input id="secret" placeholder="leave blank if worker has none" />
+
+      <div class="actions">
+        <button id="submitBtn">▶ Run extraction</button>
+        <button class="secondary" id="refreshBtn">↻ Refresh jobs</button>
+      </div>
+      <div class="err" id="formErr"></div>
+    </section>
+
+    <!-- ── Result + jobs ─────────────────────────────────────────────────── -->
+    <section class="card">
+      <h2>2 · Current job</h2>
+      <div id="current">
+        <span class="muted">No job submitted yet.</span>
+      </div>
+
+      <h2 style="margin-top:22px">Recent jobs</h2>
+      <table>
+        <thead><tr><th>Job</th><th>Status</th><th>Output</th></tr></thead>
+        <tbody id="jobRows"><tr><td colspan="3" class="muted">—</td></tr></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let pollTimer = null;
+
+    async function health() {
+      try {
+        const r = await fetch('/healthz'); const j = await r.json();
+        $('health').textContent = '● ' + (j.status === 'ok' ? 'online' : 'degraded');
+        $('health').style.color = j.status === 'ok' ? '#2ecc71' : '#f1c40f';
+      } catch { $('health').textContent = '● offline'; $('health').style.color = '#ff5d5d'; }
+    }
+
+    // Live deterministic dimension preview (mirrors src/sizing.ts).
+    async function previewDims() {
+      const body = {
+        widthInches: +$('w').value, heightInches: +$('h').value,
+        dpi: +$('dpi').value, bleedInches: +$('bleed').value,
+      };
+      try {
+        const r = await fetch('/preview/dimensions', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'bad input');
+        $('dimsBig').textContent = j.targetWidthPx + ' × ' + j.targetHeightPx + ' px';
+        $('dimsFormula').textContent =
+          `round((${body.widthInches}+${body.bleedInches}×2)×${body.dpi}) × ` +
+          `round((${body.heightInches}+${body.bleedInches}×2)×${body.dpi})`;
+      } catch (e) {
+        $('dimsBig').textContent = '—'; $('dimsFormula').textContent = e.message;
+      }
+    }
+    ['w','h','dpi','bleed'].forEach((id) => $(id).addEventListener('input', previewDims));
+
+    function renderCurrent(rec) {
+      if (!rec) { $('current').innerHTML = '<span class="muted">No job submitted yet.</span>'; return; }
+      let html = `<div><span class="pill ${rec.status}">${rec.status}</span>
+        <span class="muted" style="margin-left:8px">${rec.jobId}</span></div>`;
+      if (rec.result) {
+        const d = rec.result.dimensions;
+        html += `<div style="margin-top:12px;font-family:var(--mono)">
+          ${d.targetWidthPx}×${d.targetHeightPx}px · voids repaired: ${rec.result.inpaintedVoids}</div>`;
+        html += `<div class="hint">Stored at: ${rec.result.storagePath}</div>`;
+        html += '<table style="margin-top:12px"><thead><tr><th>QC metric</th><th>Value</th><th>Limit</th><th></th></tr></thead><tbody>';
+        for (const m of rec.result.qc.metrics) {
+          html += `<tr><td>${m.name}</td><td>${m.value.toFixed(4)}</td><td>${m.threshold}</td>
+            <td class="${m.passed ? 'metric-ok' : 'metric-bad'}">${m.passed ? '✓' : '✗'}</td></tr>`;
+        }
+        html += '</tbody></table>';
+      }
+      if (rec.failures && rec.failures.length) {
+        html += '<div class="err">QC gate rejected — ' +
+          rec.failures.map((f) => `${f.name}=${(+f.value).toFixed(4)} (limit ${f.threshold})`).join(', ') + '</div>';
+      }
+      if (rec.error && !rec.failures) html += `<div class="err">${rec.error}</div>`;
+      $('current').innerHTML = html;
+    }
+
+    async function pollJob(id) {
+      clearInterval(pollTimer);
+      const tick = async () => {
+        try {
+          const r = await fetch('/jobs/' + encodeURIComponent(id));
+          if (!r.ok) return;
+          const rec = await r.json();
+          renderCurrent(rec);
+          if (['completed', 'qc_rejected', 'failed'].includes(rec.status)) {
+            clearInterval(pollTimer); refreshJobs();
+          }
+        } catch {}
+      };
+      await tick();
+      pollTimer = setInterval(tick, 1500);
+    }
+
+    async function refreshJobs() {
+      try {
+        const r = await fetch('/jobs'); const jobs = await r.json();
+        $('jobRows').innerHTML = jobs.length ? jobs.map((j) =>
+          `<tr><td>${j.jobId}</td><td><span class="pill ${j.status}">${j.status}</span></td>
+           <td class="muted">${j.result ? j.result.storagePath : '—'}</td></tr>`).join('')
+          : '<tr><td colspan="3" class="muted">No jobs yet.</td></tr>';
+      } catch {}
+    }
+
+    function parseOrThrow(id, label) {
+      try { return JSON.parse($(id).value); }
+      catch { throw new Error(`${label} is not valid JSON`); }
+    }
+
+    async function submit() {
+      $('formErr').textContent = '';
+      let payload;
+      try {
+        const quad = parseOrThrow('quad', 'Source quad');
+        if (!Array.isArray(quad) || quad.length !== 4) throw new Error('Source quad must have exactly 4 points');
+        const occlusions = parseOrThrow('occlusions', 'Occlusions');
+        if (!$('masterUrl').value.trim()) throw new Error('Master artwork URL is required');
+        payload = {
+          jobId: $('jobId').value.trim(),
+          outputPath: $('outputPath').value.trim(),
+          manifest: {
+            panelId: $('panelId').value.trim(),
+            masterArtworkUrl: $('masterUrl').value.trim(),
+            physical: { widthInches: +$('w').value, heightInches: +$('h').value,
+              dpi: +$('dpi').value, bleedInches: +$('bleed').value },
+            sourceQuad: quad,
+            occlusions,
+          },
+        };
+      } catch (e) { $('formErr').textContent = e.message; return; }
+
+      $('submitBtn').disabled = true;
+      try {
+        const headers = { 'content-type': 'application/json' };
+        if ($('secret').value.trim()) headers['x-panelpro-signature'] = $('secret').value.trim();
+        const r = await fetch('/webhook/extract', { method: 'POST', headers, body: JSON.stringify(payload) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        pollJob(j.jobId);
+      } catch (e) { $('formErr').textContent = e.message; }
+      finally { $('submitBtn').disabled = false; }
+    }
+
+    $('submitBtn').addEventListener('click', submit);
+    $('refreshBtn').addEventListener('click', refreshJobs);
+    health(); previewDims(); refreshJobs();
+    setInterval(health, 10000);
+  </script>
+</body>
+</html>
