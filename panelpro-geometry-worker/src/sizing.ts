@@ -10,8 +10,8 @@
  * Reference: a 190" x 51" panel @ 150 DPI with 5" bleed → exactly 30000 x 9150.
  */
 
-import { config } from './config';
-import type { DimensionSource, PanelPhysical, ResolvedDimensions } from './types';
+import { config } from './config.js';
+import type { DimensionSource, PanelPhysical, ResolvedDimensions } from './types.js';
 
 export function resolveDimensions(physical: PanelPhysical): ResolvedDimensions {
   const dpi = physical.dpi ?? config.geometry.defaultDpi;

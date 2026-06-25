@@ -17,10 +17,10 @@
 import axios from 'axios';
 import sharp from 'sharp';
 
-import { resolveDimensions, bleedPx, liveDimensions, normalizeDimensionSource } from './sizing';
-import { uploadPrintAsset, uploadPreview } from './supabase';
-import { runQualityGate, QcGateError } from './qc';
-import type { CropBox, ExtractionJob, ExtractionResult, ResolvedDimensions } from './types';
+import { resolveDimensions, bleedPx, liveDimensions, normalizeDimensionSource } from './sizing.js';
+import { uploadPrintAsset, uploadPreview } from './supabase.js';
+import { runQualityGate, QcGateError } from './qc.js';
+import type { CropBox, ExtractionJob, ExtractionResult, ResolvedDimensions } from './types.js';
 
 // Allow large prints to stream without tripping libvips' pixel guard.
 sharp.cache(false);

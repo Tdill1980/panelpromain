@@ -9,14 +9,17 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
+    "mcp": "node dist/mcpServer.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\""
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
     "@supabase/supabase-js": "^2.45.4",
     "axios": "^1.7.7",
     "express": "^4.21.0",

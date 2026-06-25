@@ -18,9 +18,9 @@
 
 import axios from 'axios';
 import sharp from 'sharp';
-import type { CropBox, QcMetric, QcReport, ResolvedDimensions } from './types';
-import { config } from './config';
-import { bleedPx, liveDimensions } from './sizing';
+import type { CropBox, QcMetric, QcReport, ResolvedDimensions } from './types.js';
+import { config } from './config.js';
+import { bleedPx, liveDimensions } from './sizing.js';
 
 /** Side length the comparison rasters are normalized to before metrics. */
 const COMPARE_LONG_EDGE = 1024;

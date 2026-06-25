@@ -11,15 +11,19 @@
  */
 
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express, { type Request, type Response } from 'express';
 import multer from 'multer';
-import { config, assertRuntimeConfig } from './config';
-import { executeMechanicalExtraction } from './processor';
-import { QcGateError } from './qc';
-import { resolveDimensions, normalizeDimensionSource } from './sizing';
-import { createJob, getJob, listJobs, updateJob, type JobMeta } from './jobs';
-import { createSignedUrl } from './supabase';
-import type { ExtractionJob, PanelManifest } from './types';
+import { config, assertRuntimeConfig } from './config.js';
+import { executeMechanicalExtraction } from './processor.js';
+import { QcGateError } from './qc.js';
+import { resolveDimensions, normalizeDimensionSource } from './sizing.js';
+import { createJob, getJob, listJobs, updateJob, type JobMeta } from './jobs.js';
+import { createSignedUrl } from './supabase.js';
+import type { ExtractionJob, PanelManifest } from './types.js';
+
+// ESM has no __dirname — derive it from import.meta.url.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
