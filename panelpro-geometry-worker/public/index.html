@@ -66,6 +66,12 @@
     .btn-view { background: var(--panel2); color: var(--txt); border: 1px solid var(--line); }
     .preview-img { display: block; margin-top: 12px; max-width: 100%; border: 1px solid var(--line);
       border-radius: 8px; background: #fff; }
+    .readout { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line);
+      border-radius: 8px; background: var(--panel2); font-family: var(--mono); font-size: 13px; }
+    .readout b { color: var(--accent); }
+    .preview-wrap { position: relative; display: inline-block; margin-top: 12px; line-height: 0; }
+    .preview-wrap .preview-img { margin-top: 0; }
+    .bleed-guide { position: absolute; border: 1px dashed var(--warn); pointer-events: none; }
     table { width: 100%; border-collapse: collapse; font-size: 12px; }
     th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-weight: 500; }
@@ -245,13 +251,25 @@
           &nbsp; ${sourceBadge(m.dimensionSource)}</div>`;
       }
       if (rec.result) {
-        html += `<div class="mono" style="margin-top:6px">voids repaired: ${rec.result.inpaintedVoids}</div>`;
+        const d = rec.result.dimensions;
+        const de = rec.result.qc.metrics.find((x) => x.name === 'deltaE');
+        // Readout: exact generated pixels alongside ΔE status.
+        html += `<div class="readout">Generated <b>${d.targetWidthPx} × ${d.targetHeightPx} px</b>
+          &nbsp;·&nbsp; ΔE <b>${de ? de.value.toFixed(2) : 'n/a'}</b>
+          &nbsp;<span class="pill ${rec.result.qc.passed ? 'src-ok' : 'src-warn'}">${rec.result.qc.passed ? '✓ QC PASS' : '✗ QC FAIL'}</span></div>`;
         html += `<div class="hint">Stored at: ${rec.result.storagePath}</div>`;
-        // View / Download the finished print asset from Supabase.
         html += `<div><a class="btn-link btn-dl" href="/jobs/${encodeURIComponent(rec.jobId)}/download" target="_blank" rel="noopener">⬇ Download print file</a>`;
         if (rec.result.previewPath) {
-          html += `<a class="btn-link btn-view" href="/jobs/${encodeURIComponent(rec.jobId)}/preview" target="_blank" rel="noopener">🔍 View full preview</a></div>`;
-          html += `<img class="preview-img" src="/jobs/${encodeURIComponent(rec.jobId)}/preview" alt="print preview" />`;
+          html += `<a class="btn-link btn-view" href="/jobs/${encodeURIComponent(rec.jobId)}/preview" target="_blank" rel="noopener">🔍 View full</a></div>`;
+          // Preview with a visual bleed-boundary guide (dashed inset).
+          const bleed = (d.bleedInches || 0) * (d.dpi || 150);
+          const bx = d.targetWidthPx ? (bleed / d.targetWidthPx * 100).toFixed(2) : 0;
+          const by = d.targetHeightPx ? (bleed / d.targetHeightPx * 100).toFixed(2) : 0;
+          html += `<div class="preview-wrap">
+            <img class="preview-img" src="/jobs/${encodeURIComponent(rec.jobId)}/preview" alt="print preview" />
+            <div class="bleed-guide" style="top:${by}%;bottom:${by}%;left:${bx}%;right:${bx}%"></div>
+          </div>`;
+          html += `<div class="hint">Dashed line = ${d.bleedInches || 5}″ bleed boundary; artwork should fill to the outer edge.</div>`;
         } else {
           html += `</div>`;
         }
@@ -267,7 +285,28 @@
           rec.failures.map((f) => `${f.name}=${(+f.value).toFixed(4)} (limit ${f.threshold})`).join(', ') + '</div>';
       }
       if (rec.error && !rec.failures) html += `<div class="err">${rec.error}</div>`;
+      // Manual recovery: re-run a finished/failed job from its stored inputs.
+      if (['completed', 'qc_rejected', 'failed'].includes(rec.status)) {
+        html += `<div><button class="btn-link btn-view" onclick="reExtract('${rec.jobId}')">🔄 Force Re-Extract</button></div>`;
+      }
       $('current').innerHTML = html;
+    }
+
+    async function reExtract(id) {
+      $('formErr').textContent = '';
+      const headers = {};
+      const secret = $('secret').value.trim();
+      if (secret) headers['x-panelpro-signature'] = secret;
+      try {
+        const r = await fetch('/jobs/' + encodeURIComponent(id) + '/reextract', { method: 'POST', headers });
+        const j = await r.json().catch(() => ({}));
+        if (r.status === 409) {
+          $('formErr').textContent = 'Manual-upload job — re-drop the file above and click Run again.';
+          return;
+        }
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        pollJob(id);
+      } catch (e) { $('formErr').textContent = e.message; }
     }
 
     async function pollJob(id) {

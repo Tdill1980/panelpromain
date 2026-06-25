@@ -92,6 +92,36 @@ app.get('/jobs/:id/preview', (req: Request, res: Response) => {
   void signedRedirect(res, getJob(req.params.id ?? '')?.result?.previewPath);
 });
 
+/**
+ * Force Re-Extract — re-run a stored job (e.g. a failed/qc_rejected one).
+ * Works for URL jobs (manifest is retained); manual-upload jobs need the file
+ * re-dropped since raw bytes aren't kept.
+ */
+app.post('/jobs/:id/reextract', (req: Request, res: Response) => {
+  if (!isAuthorized(req)) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  const rec = getJob(req.params.id ?? '');
+  if (!rec?.inputs) {
+    res.status(404).json({ error: 'no stored inputs to re-extract for this job' });
+    return;
+  }
+  if (rec.inputs.source === 'manual-upload') {
+    res.status(409).json({ error: 'manual-upload job — re-drop the file and click Run again' });
+    return;
+  }
+  const job: ExtractionJob = {
+    jobId: rec.jobId,
+    manifest: rec.inputs.manifest,
+    outputPath: rec.inputs.outputPath,
+    source: 'restylepro-url',
+  };
+  updateJob(rec.jobId, { status: 'queued', error: undefined, failures: undefined });
+  res.status(202).json({ accepted: true, jobId: rec.jobId });
+  void dispatch(job);
+});
+
 async function signedRedirect(res: Response, objectPath: string | undefined): Promise<void> {
   if (!objectPath) {
     res.status(404).json({ error: 'asset not available (job missing, unfinished, or no preview)' });
@@ -123,7 +153,11 @@ app.post('/webhook/extract', (req: Request, res: Response) => {
   }
 
   // Accept and process out-of-band so a 30000×9150 warp never blocks the socket.
-  createJob(job.jobId, metaFor(job));
+  createJob(job.jobId, metaFor(job), {
+    manifest: job.manifest,
+    outputPath: job.outputPath,
+    source: job.source,
+  });
   res.status(202).json({ accepted: true, jobId: job.jobId });
   void dispatch(job);
 });
@@ -161,7 +195,11 @@ app.post('/webhook/extract/upload', upload.single('artwork'), (req: Request, res
     return;
   }
 
-  createJob(job.jobId, metaFor(job));
+  createJob(job.jobId, metaFor(job), {
+    manifest: job.manifest,
+    outputPath: job.outputPath,
+    source: job.source,
+  });
   res.status(202).json({ accepted: true, jobId: job.jobId, source: 'manual-upload' });
   void dispatch(job);
 });

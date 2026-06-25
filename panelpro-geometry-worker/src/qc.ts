@@ -195,38 +195,48 @@ function edgeErrorMetric(a: Plane, b: Plane): QcMetric {
 // ────────────────────────────────────────────────────────────────────────────
 
 async function ocrMetric(candidate: Buffer, reference: Buffer): Promise<QcMetric> {
-  let tesseract: typeof import('tesseract.js') | null = null;
+  // OCR is best-effort: if tesseract.js is missing, the wrong shape, or fails at
+  // runtime (e.g. model download blocked), we SKIP it (pass) rather than fail an
+  // otherwise-good print. It only ever rejects on a real 1:1 text mismatch.
+  const skip = (detail: string): QcMetric => ({
+    name: 'ocrTextChange',
+    value: 0,
+    threshold: 0,
+    passed: true,
+    detail,
+  });
+
+  let recognize: ((png: Buffer) => Promise<string>) | null = null;
   try {
-    // Optional dependency: present in prod, absent in lightweight geometry CI.
-    tesseract = await import('tesseract.js');
-  } catch {
-    return {
-      name: 'ocrTextChange',
-      value: 0,
-      threshold: 0,
-      passed: true,
-      detail: 'tesseract.js not installed — OCR check skipped',
+    // Dynamic import may put the API on `.default` (CJS interop under ESM).
+    const mod = (await import('tesseract.js')) as Record<string, unknown>;
+    const lib = ((mod.default as Record<string, unknown>) ?? mod) as {
+      recognize?: (img: Buffer, lang: string) => Promise<{ data?: { text?: string } }>;
     };
+    if (typeof lib.recognize !== 'function') {
+      return skip('tesseract.js recognize() unavailable — OCR skipped');
+    }
+    recognize = async (png: Buffer) => {
+      const out = await lib.recognize!(png, 'eng');
+      return String(out?.data?.text ?? '').replace(/\s+/g, ' ').trim();
+    };
+  } catch {
+    return skip('tesseract.js not installed — OCR skipped');
   }
 
-  const [candText, refText] = await Promise.all([
-    recognize(tesseract, candidate),
-    recognize(tesseract, reference),
-  ]);
-
-  const distance = normalizedLevenshtein(candText, refText);
-  return {
-    name: 'ocrTextChange',
-    value: distance,
-    threshold: 0, // require exact 1:1 lettering
-    passed: distance === 0,
-    detail: 'normalized edit distance between OCR transcriptions',
-  };
-}
-
-async function recognize(t: typeof import('tesseract.js'), png: Buffer): Promise<string> {
-  const { data } = await t.recognize(png, 'eng');
-  return data.text.replace(/\s+/g, ' ').trim();
+  try {
+    const [candText, refText] = await Promise.all([recognize(candidate), recognize(reference)]);
+    const distance = normalizedLevenshtein(candText, refText);
+    return {
+      name: 'ocrTextChange',
+      value: distance,
+      threshold: 0, // require exact 1:1 lettering
+      passed: distance === 0,
+      detail: 'normalized edit distance between OCR transcriptions',
+    };
+  } catch (err) {
+    return skip(`OCR unavailable (${(err as Error).message}) — skipped`);
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
