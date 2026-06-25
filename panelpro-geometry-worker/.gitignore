@@ -3,6 +3,7 @@ dist/
 *.log
 .env
 .env.local
+deploy.env
 .DS_Store
 scratch/
 tmp/
