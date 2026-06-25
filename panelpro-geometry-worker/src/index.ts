@@ -18,6 +18,7 @@ import { executeMechanicalExtraction } from './processor';
 import { QcGateError } from './qc';
 import { resolveDimensions, normalizeDimensionSource } from './sizing';
 import { createJob, getJob, listJobs, updateJob, type JobMeta } from './jobs';
+import { createSignedUrl } from './supabase';
 import type { ExtractionJob, PanelManifest } from './types';
 
 const app = express();
@@ -76,6 +77,28 @@ app.get('/jobs/:id', (req: Request, res: Response) => {
 app.get('/jobs', (_req: Request, res: Response) => {
   res.json(listJobs());
 });
+
+/** Redirect to a fresh signed URL for the finished print PNG (download). */
+app.get('/jobs/:id/download', (req: Request, res: Response) => {
+  void signedRedirect(res, getJob(req.params.id ?? '')?.result?.storagePath);
+});
+
+/** Redirect to a fresh signed URL for the JPEG preview thumbnail. */
+app.get('/jobs/:id/preview', (req: Request, res: Response) => {
+  void signedRedirect(res, getJob(req.params.id ?? '')?.result?.previewPath);
+});
+
+async function signedRedirect(res: Response, objectPath: string | undefined): Promise<void> {
+  if (!objectPath) {
+    res.status(404).json({ error: 'asset not available (job missing, unfinished, or no preview)' });
+    return;
+  }
+  try {
+    res.redirect(302, await createSignedUrl(objectPath));
+  } catch (err) {
+    res.status(502).json({ error: (err as Error).message });
+  }
+}
 
 /**
  * Inbound webhook. Authenticates with a shared secret, validates the payload

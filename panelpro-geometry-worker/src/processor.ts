@@ -23,7 +23,7 @@ import cv from 'opencv4nodejs';
 
 import { config } from './config';
 import { resolveDimensions, bleedPx, normalizeDimensionSource } from './sizing';
-import { uploadPrintAsset } from './supabase';
+import { uploadPrintAsset, uploadPreview } from './supabase';
 import { inpaintVoids } from './inpaint';
 import { runQualityGate, QcGateError } from './qc';
 import type {
@@ -84,12 +84,17 @@ export async function executeMechanicalExtraction(job: ExtractionJob): Promise<E
 
   const storagePath = await uploadPrintAsset(job.outputPath, printPng);
 
+  // Small JPEG thumbnail for the console (the full PNG is too large to preview
+  // in a browser). A preview failure must never fail an otherwise-good job.
+  const previewPath = await generatePreview(repaired, job.outputPath).catch(() => undefined);
+
   return {
     jobId: job.jobId,
     panelId: manifest.panelId,
     dimensions: dims,
     dimensionSource: normalizeDimensionSource(manifest.dimensionSource),
     storagePath,
+    previewPath,
     qc,
     inpaintedVoids: occlusions.length,
   };
@@ -165,6 +170,21 @@ function warpToTarget(masterBytes: Buffer, sourceQuad: CornerQuad, dims: Resolve
 
 function toCvPoint(p: Point): cv.Point2 {
   return new cv.Point2(p.x, p.y);
+}
+
+/**
+ * Build a downscaled JPEG preview from the flat asset and upload it alongside
+ * the print file. Derives `<output>.preview.jpg` from the output path.
+ */
+async function generatePreview(asset: sharp.Sharp, outputPath: string): Promise<string> {
+  const jpeg = await asset
+    .clone()
+    .resize({ width: 1400, fit: 'inside', kernel: sharp.kernel.lanczos3 })
+    .flatten({ background: '#ffffff' }) // JPEG has no alpha
+    .jpeg({ quality: 80 })
+    .toBuffer();
+  const previewPath = outputPath.replace(/\.[^./]+$/, '') + '.preview.jpg';
+  return uploadPreview(previewPath, jpeg);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
