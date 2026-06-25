@@ -17,9 +17,9 @@
 
 import axios from 'axios';
 import sharp from 'sharp';
-// Native OpenCV bindings. Heavy install; isolated to the warp step so the rest
-// of the pipeline stays portable.
-import cv from 'opencv4nodejs';
+// Native OpenCV bindings (maintained @u4 fork — builds against modern system
+// OpenCV). Heavy install; isolated to the warp step so the rest stays portable.
+import cv from '@u4/opencv4nodejs';
 
 import { config } from './config';
 import { resolveDimensions, bleedPx, normalizeDimensionSource } from './sizing';
@@ -168,7 +168,7 @@ function warpToTarget(masterBytes: Buffer, sourceQuad: CornerQuad, dims: Resolve
   return cv.imencode('.png', warped);
 }
 
-function toCvPoint(p: Point): cv.Point2 {
+function toCvPoint(p: Point): InstanceType<typeof cv.Point2> {
   return new cv.Point2(p.x, p.y);
 }
 
