@@ -5,16 +5,18 @@
 #   docker compose down               # stop
 #
 # Requires a sibling .env (see .env.example) with at least:
-#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and a non-empty WEBHOOK_SECRET.
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, a non-empty WEBHOOK_SECRET, and
+#   WORKER_DOMAIN (the public HTTPS hostname Caddy will serve).
 services:
   worker:
     build: .
     image: panelpro-worker
     container_name: panelpro-print-engine
     restart: unless-stopped
+    # Not published to the public internet — Caddy reaches it over the internal
+    # compose network as "worker:8080". The localhost bind is for on-box debug
+    # only (e.g. `curl 127.0.0.1:8080/healthz`).
     ports:
-      # Bind to localhost only and terminate TLS in a reverse proxy (Caddy/Nginx)
-      # in front. Change to "8080:8080" only if you firewall the port yourself.
       - "127.0.0.1:8080:8080"
     env_file:
       - .env
@@ -44,3 +46,33 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+  # ── TLS reverse proxy ───────────────────────────────────────────────────────
+  # Terminates HTTPS at https://${WORKER_DOMAIN} and forwards to the worker.
+  # Automatic certificates via Let's Encrypt — see ./Caddyfile.
+  caddy:
+    image: caddy:2-alpine
+    container_name: panelpro-caddy
+    restart: unless-stopped
+    depends_on:
+      - worker
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      # Pulled from .env via compose substitution; fails fast if unset.
+      WORKER_DOMAIN: ${WORKER_DOMAIN:?set WORKER_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # persisted certs/keys (survives restarts)
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  caddy_data:
+  caddy_config:
