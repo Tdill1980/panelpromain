@@ -165,8 +165,11 @@
       </div>
       <div class="hint">Where the panel (e.g. Driver Side) sits within the multi-view proof. From RestylePro automatically, or read off the proof for manual jobs.</div>
 
-      <label>Webhook secret (x-panelpro-signature)</label>
-      <input id="secret" placeholder="leave blank if worker has none" />
+      <!-- Auto-authenticated by the worker (window.__PP_SECRET__); hidden by default. -->
+      <div id="secretRow" style="display:none">
+        <label>Webhook secret (x-panelpro-signature)</label>
+        <input id="secret" placeholder="auto-filled by the server" />
+      </div>
 
       <div class="actions">
         <button id="submitBtn">▶ Run extraction</button>
@@ -190,7 +193,7 @@
     </section>
   </main>
 
-  <script src="https://unpkg.com/konva@9.3.16/konva.min.js"></script>
+  <script src="/konva.min.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     let pollTimer = null;
@@ -519,11 +522,14 @@
       finally { $('submitBtn').disabled = false; }
     }
 
-    // Remember the webhook secret in this browser so you only type it once.
-    const SECRET_KEY = 'pp_webhook_secret';
-    const savedSecret = localStorage.getItem(SECRET_KEY);
-    if (savedSecret) $('secret').value = savedSecret;
-    $('secret').addEventListener('input', () => localStorage.setItem(SECRET_KEY, $('secret').value));
+    // The worker injects its own secret so the console authenticates silently —
+    // no typing, can never mismatch. Falls back to a (hidden) manual field only
+    // if the server didn't inject one.
+    if (typeof window.__PP_SECRET__ === 'string') {
+      $('secret').value = window.__PP_SECRET__;
+    } else {
+      $('secretRow').style.display = '';
+    }
 
     $('submitBtn').addEventListener('click', submit);
     $('refreshBtn').addEventListener('click', refreshJobs);

@@ -12,6 +12,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import express, { type Request, type Response } from 'express';
 import multer from 'multer';
 import { config, assertRuntimeConfig } from './config.js';
@@ -39,8 +40,26 @@ const upload = multer({
   limits: { fileSize: 512 * 1024 * 1024, files: 1 },
 });
 
-// Operator console (static SPA). Not part of the print pipeline — observability
-// only. Served from the repo-root /public dir (one level up from dist/ or src/).
+// Operator console. The worker serves it and injects its own webhook secret so
+// the console authenticates silently — the operator never types it. (The console
+// is the worker's own trusted same-origin UI; on a public host, firewall the
+// port or front it with the Caddy/HTTPS setup.)
+const consoleHtmlPath = path.join(__dirname, '..', 'public', 'index.html');
+function serveConsole(_req: Request, res: Response): void {
+  try {
+    const html = readFileSync(consoleHtmlPath, 'utf8').replace(
+      '</head>',
+      `<script>window.__PP_SECRET__=${JSON.stringify(config.webhookSecret)};</script></head>`,
+    );
+    res.type('html').send(html);
+  } catch {
+    res.status(500).send('console unavailable');
+  }
+}
+app.get('/', serveConsole);
+app.get('/index.html', serveConsole);
+
+// Other static assets (konva.min.js, etc.).
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.get('/healthz', (_req: Request, res: Response) => {
