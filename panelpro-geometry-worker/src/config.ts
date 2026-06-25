@@ -20,6 +20,12 @@ function str(name: string, fallback = ''): string {
   return process.env[name]?.trim() || fallback;
 }
 
+function bool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  return /^(1|true|yes|on)$/i.test(raw.trim());
+}
+
 export const config = {
   port: num('PORT', 8080),
   webhookSecret: str('WEBHOOK_SECRET'),
@@ -44,7 +50,7 @@ export const config = {
     maxDeltaE: 2.0, // hue drift / ambient dimming
     minSsim: 0.98, // pixel blur / layout warp
     maxEdgeErrorPx: 1.0, // boundary deviation
-    enforceOcr: true, // 1:1 lettering/typography
+    enforceOcr: bool('ENFORCE_OCR', true), // 1:1 lettering/typography (best-effort)
   },
 } as const;
 

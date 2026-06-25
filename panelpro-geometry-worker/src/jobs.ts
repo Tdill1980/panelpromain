@@ -7,7 +7,7 @@
  * purely observability for the operator console.
  */
 
-import type { DimensionSource, ExtractionResult } from './types.js';
+import type { DimensionSource, ExtractionResult, PanelManifest } from './types.js';
 
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'qc_rejected' | 'failed';
 
@@ -18,6 +18,13 @@ export interface JobMeta {
   dimensionSource: DimensionSource;
 }
 
+/** Re-runnable job inputs (no raw bytes) so a job can be Force Re-Extracted. */
+export interface JobInputs {
+  manifest: PanelManifest;
+  outputPath: string;
+  source?: 'restylepro-url' | 'manual-upload';
+}
+
 export interface JobRecord {
   jobId: string;
   status: JobStatus;
@@ -25,6 +32,8 @@ export interface JobRecord {
   updatedAt: number;
   /** Resolved sizing + provenance, populated at creation. */
   meta?: JobMeta;
+  /** Re-runnable inputs for Force Re-Extract (URL jobs only; no raw bytes). */
+  inputs?: JobInputs;
   result?: ExtractionResult;
   /** Failure / QC detail for the UI. */
   error?: string;
@@ -39,8 +48,8 @@ function now(): number {
   return Date.now();
 }
 
-export function createJob(jobId: string, meta?: JobMeta): JobRecord {
-  const rec: JobRecord = { jobId, status: 'queued', createdAt: now(), updatedAt: now(), meta };
+export function createJob(jobId: string, meta?: JobMeta, inputs?: JobInputs): JobRecord {
+  const rec: JobRecord = { jobId, status: 'queued', createdAt: now(), updatedAt: now(), meta, inputs };
   REGISTRY.set(jobId, rec);
   evictIfNeeded();
   return rec;
