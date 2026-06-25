@@ -79,7 +79,20 @@
     pre { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
       padding: 12px; overflow: auto; font-size: 11.5px; max-height: 280px; }
     .hint { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
-    .err { color: var(--bad); font-size: 12px; margin-top: 8px; }
+    .err { color: var(--bad); font-size: 12.5px; margin-top: 10px; padding: 10px 12px;
+      border: 1px solid #5a2330; border-radius: 8px; background: #2a1418; }
+    .stages { margin-top: 12px; display: flex; flex-direction: column; gap: 4px; }
+    .stage { font-size: 12.5px; font-family: var(--mono); color: var(--muted);
+      display: flex; align-items: center; gap: 8px; }
+    .stage .stage-ic { width: 16px; text-align: center; }
+    .stage.done { color: var(--ok); }
+    .stage.done .stage-ic { color: var(--ok); }
+    .stage.active { color: var(--txt); }
+    .stage.active .stage-ic { color: var(--accent); display: inline-block;
+      animation: spin 1s linear infinite; }
+    .stage.failed { color: var(--bad); }
+    .stage.failed .stage-ic { color: var(--bad); }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -240,6 +253,30 @@
       return m && m.targetWidthPx ? `${m.targetWidthPx} × ${m.targetHeightPx} px` : '—';
     }
 
+    // Live progress tracker — the pipeline stages the worker reports.
+    const STAGES = ['Fetching artwork', 'Rendering panel', 'Quality check', 'Uploading', 'Generating preview'];
+    function stageIndex(stage) {
+      if (!stage) return -1;
+      if (stage === 'Done') return STAGES.length;
+      return STAGES.findIndex((s) => stage.startsWith(s));
+    }
+    function renderStages(rec) {
+      const cur = stageIndex(rec.stage);
+      const failedHere = rec.status === 'failed' || rec.status === 'qc_rejected';
+      let h = '<div class="stages">';
+      STAGES.forEach((s, i) => {
+        let cls = 'pending', icon = '○';
+        if (rec.status === 'completed' || (cur >= 0 && i < cur)) { cls = 'done'; icon = '✓'; }
+        else if (i === cur) {
+          if (failedHere) { cls = 'failed'; icon = '✗'; }
+          else { cls = 'active'; icon = '⟳'; }
+        }
+        const label = (i === cur && rec.stage && rec.stage.startsWith(s)) ? rec.stage : s;
+        h += `<div class="stage ${cls}"><span class="stage-ic">${icon}</span> ${label}</div>`;
+      });
+      return h + '</div>';
+    }
+
     function renderCurrent(rec) {
       if (!rec) { $('current').innerHTML = '<span class="muted">No job submitted yet.</span>'; return; }
       const m = rec.meta || (rec.result && {
@@ -253,6 +290,8 @@
         html += `<div style="margin-top:12px" class="mono">${dimsText(m)} (W×H)
           &nbsp; ${sourceBadge(m.dimensionSource)}</div>`;
       }
+      // Live progress checklist (always shown once a job is running/finished).
+      if (rec.stage || rec.status !== 'queued') html += renderStages(rec);
       if (rec.result) {
         const d = rec.result.dimensions;
         const de = rec.result.qc.metrics.find((x) => x.name === 'deltaE');

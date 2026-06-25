@@ -17,6 +17,7 @@
 import axios from 'axios';
 import sharp from 'sharp';
 
+import { config } from './config.js';
 import { resolveDimensions, bleedPx, liveDimensions, normalizeDimensionSource } from './sizing.js';
 import { uploadPrintAsset, uploadPreview } from './supabase.js';
 import { runQualityGate, QcGateError } from './qc.js';
@@ -32,17 +33,23 @@ sharp.concurrency(0); // libvips picks an optimal thread count
  * Throws {@link QcGateError} when the strict QC gate rejects the result — the
  * caller treats that as a hard halt for the job.
  */
-export async function executeMechanicalExtraction(job: ExtractionJob): Promise<ExtractionResult> {
+export async function executeMechanicalExtraction(
+  job: ExtractionJob,
+  onStage: (stage: string) => void = () => {},
+): Promise<ExtractionResult> {
   const { manifest } = job;
   const dims = resolveDimensions(manifest.physical);
 
   // ── A. ACQUIRE MASTER SHEET ─────────────────────────────────────────────────
+  onStage('Fetching artwork');
   const masterBytes = await loadMaster(job);
 
   // ── B–D. CROP → SIZE → MIRROR BLEED → 8-bit PNG ─────────────────────────────
+  onStage('Rendering panel');
   const printPng = await buildPanel(masterBytes, manifest.cropBox, dims);
 
   // Strict QC gate: the produced panel vs the same region of the master sheet.
+  onStage('Quality check');
   const qc = await runQualityGate({
     candidate: printPng,
     referenceBytes: job.masterBytes,
@@ -55,11 +62,14 @@ export async function executeMechanicalExtraction(job: ExtractionJob): Promise<E
   }
 
   // ── E. UPLOAD ───────────────────────────────────────────────────────────────
+  onStage(`Uploading (${(printPng.length / 1048576).toFixed(1)} MB)`);
   const storagePath = await uploadPrintAsset(job.outputPath, printPng);
 
   // Small JPEG thumbnail for the console (the full PNG is too large to preview
   // in a browser). A preview failure must never fail an otherwise-good job.
+  onStage('Generating preview');
   const previewPath = await generatePreview(printPng, job.outputPath).catch(() => undefined);
+  onStage('Done');
 
   return {
     jobId: job.jobId,
@@ -118,10 +128,17 @@ async function buildPanel(
     // Deterministically extend edge graphics into the bleed perimeter — mirror
     // avoids the smeared single-pixel streak that 'copy'/replicate produces.
     .extend({ top: bleed, bottom: bleed, left: bleed, right: bleed, extendWith: 'mirror' })
-    // Back to 8-bit sRGB and write a uncompressed, true-colour RGBA PNG.
+    // Back to 8-bit sRGB and write a lossless true-colour RGBA PNG. PNG is
+    // lossless at every level; we compress (default 6) so the file is a sane
+    // size that storage will accept, with identical pixels.
     .toColourspace('srgb')
     .ensureAlpha()
-    .png({ compressionLevel: 0, adaptiveFiltering: false, palette: false, force: true })
+    .png({
+      compressionLevel: config.export.pngCompression,
+      adaptiveFiltering: false,
+      palette: false,
+      force: true,
+    })
     .toBuffer();
 }
 

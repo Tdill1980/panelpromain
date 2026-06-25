@@ -240,10 +240,12 @@ function metaFor(job: ExtractionJob): JobMeta {
 
 async function dispatch(job: ExtractionJob): Promise<void> {
   const started = Date.now();
-  updateJob(job.jobId, { status: 'processing' });
+  updateJob(job.jobId, { status: 'processing', stage: 'Starting' });
   try {
-    const result = await executeMechanicalExtraction(job);
-    updateJob(job.jobId, { status: 'completed', result });
+    const result = await executeMechanicalExtraction(job, (stage) =>
+      updateJob(job.jobId, { stage }),
+    );
+    updateJob(job.jobId, { status: 'completed', stage: 'Done', result });
     console.log(
       JSON.stringify({
         level: 'info',

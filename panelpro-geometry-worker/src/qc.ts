@@ -217,7 +217,13 @@ async function ocrMetric(candidate: Buffer, reference: Buffer): Promise<QcMetric
       return skip('tesseract.js recognize() unavailable — OCR skipped');
     }
     recognize = async (png: Buffer) => {
-      const out = await lib.recognize!(png, 'eng');
+      // Downscale before OCR — full-res print rasters (100s of MP) make
+      // tesseract/Leptonica run out of memory and hard-crash the process.
+      const small = await sharp(png, { limitInputPixels: false })
+        .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+        .png()
+        .toBuffer();
+      const out = await lib.recognize!(small, 'eng');
       return String(out?.data?.text ?? '').replace(/\s+/g, ' ').trim();
     };
   } catch {
