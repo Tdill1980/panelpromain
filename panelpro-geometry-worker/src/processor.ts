@@ -22,7 +22,7 @@ import sharp from 'sharp';
 import cv from 'opencv4nodejs';
 
 import { config } from './config';
-import { resolveDimensions, bleedPx } from './sizing';
+import { resolveDimensions, bleedPx, normalizeDimensionSource } from './sizing';
 import { uploadPrintAsset } from './supabase';
 import { inpaintVoids } from './inpaint';
 import { runQualityGate, QcGateError } from './qc';
@@ -88,6 +88,7 @@ export async function executeMechanicalExtraction(job: ExtractionJob): Promise<E
     jobId: job.jobId,
     panelId: manifest.panelId,
     dimensions: dims,
+    dimensionSource: normalizeDimensionSource(manifest.dimensionSource),
     storagePath,
     qc,
     inpaintedVoids: occlusions.length,

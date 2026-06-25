@@ -7,15 +7,24 @@
  * purely observability for the operator console.
  */
 
-import type { ExtractionResult } from './types';
+import type { DimensionSource, ExtractionResult } from './types';
 
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'qc_rejected' | 'failed';
+
+/** Sizing surfaced on the card as soon as the job is accepted. */
+export interface JobMeta {
+  targetWidthPx: number;
+  targetHeightPx: number;
+  dimensionSource: DimensionSource;
+}
 
 export interface JobRecord {
   jobId: string;
   status: JobStatus;
   createdAt: number;
   updatedAt: number;
+  /** Resolved sizing + provenance, populated at creation. */
+  meta?: JobMeta;
   result?: ExtractionResult;
   /** Failure / QC detail for the UI. */
   error?: string;
@@ -30,8 +39,8 @@ function now(): number {
   return Date.now();
 }
 
-export function createJob(jobId: string): JobRecord {
-  const rec: JobRecord = { jobId, status: 'queued', createdAt: now(), updatedAt: now() };
+export function createJob(jobId: string, meta?: JobMeta): JobRecord {
+  const rec: JobRecord = { jobId, status: 'queued', createdAt: now(), updatedAt: now(), meta };
   REGISTRY.set(jobId, rec);
   evictIfNeeded();
   return rec;
