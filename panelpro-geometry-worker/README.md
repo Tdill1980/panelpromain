@@ -68,6 +68,8 @@ panelpro-geometry-worker/
 ├── scripts/
 │   └── healthcheck.js  # Container HEALTHCHECK probe
 ├── Dockerfile          # Host-agnostic production image (builds OpenCV bindings)
+├── docker-compose.yml  # Worker + Caddy TLS proxy bring-up
+├── Caddyfile           # Automatic HTTPS (Let's Encrypt) reverse proxy
 ├── .dockerignore
 ├── package.json
 ├── tsconfig.json
@@ -107,12 +109,20 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
 # 3) Code + secrets
 git clone <your-repo> && cd panelpro-geometry-worker
-cp .env.example .env && nano .env        # fill SUPABASE_* and WEBHOOK_SECRET
+cp .env.example .env && nano .env        # SUPABASE_*, WEBHOOK_SECRET, WORKER_DOMAIN
 
-# 4) Build native bindings + run
+# 4) DNS + firewall (required for automatic HTTPS — see below)
+#    Point an A record for WORKER_DOMAIN at this Droplet, then:
+sudo ufw allow 80,443/tcp
+
+# 5) Build native bindings + run worker AND the Caddy TLS proxy
 docker compose up -d --build
 docker compose logs -f
 ```
+
+Once DNS has propagated, Caddy fetches a Let's Encrypt cert automatically and the
+worker is live at **`https://${WORKER_DOMAIN}`** — point the Revision StudioIQ
+frontend's webhook at `https://${WORKER_DOMAIN}/webhook/extract/upload`.
 
 #### Sizing — read this before picking a Droplet
 
@@ -131,13 +141,19 @@ host **OOM-killer**, not a V8 heap error, so `--max-old-space-size` won't help.
 `docker-compose.yml` sets `mem_limit` as a guard (kills a runaway job instead of
 the host) — tune it below your Droplet's RAM.
 
-#### Security (public IP)
+#### HTTPS & security
 
-- **Set `WEBHOOK_SECRET`.** When unset, the webhook accepts anonymous jobs.
-- The compose file binds the port to `127.0.0.1` and assumes a **TLS reverse
-  proxy** (Caddy/Nginx + Let's Encrypt) in front. A browser on an HTTPS
-  dashboard **cannot** call `http://<droplet-ip>:8080` (mixed content) — give the
-  worker a domain with HTTPS.
+The compose stack ships a **Caddy reverse proxy** (`./Caddyfile`) that terminates
+TLS at `https://${WORKER_DOMAIN}` and forwards to the worker over the internal
+network — so the worker port is never exposed publicly (bound to `127.0.0.1` for
+on-box debug only). This solves the mixed-content block: an HTTPS dashboard can
+call `https://${WORKER_DOMAIN}/...` but **cannot** call `http://<ip>:8080`.
+
+For automatic certificates Caddy needs: a DNS A record for `WORKER_DOMAIN` → the
+Droplet, and inbound **80 + 443** open. Certs persist in the `caddy_data` volume.
+
+- **Set `WEBHOOK_SECRET`.** When unset, the webhook accepts anonymous jobs — and
+  the proxy makes the endpoint reachable from the whole internet.
 
 ## Submitting jobs
 

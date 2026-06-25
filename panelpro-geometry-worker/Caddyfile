@@ -1,0 +1,25 @@
+# Automatic HTTPS for the PanelPro worker via Caddy + Let's Encrypt.
+#
+# Prerequisites on the Droplet:
+#   1. A DNS A record for WORKER_DOMAIN pointing at the Droplet's public IP.
+#   2. Inbound ports 80 and 443 open in the firewall (Caddy needs 80 for the
+#      ACME challenge and 443 for HTTPS).
+#   3. WORKER_DOMAIN set in .env (e.g. worker.yourdomain.com).
+#
+# Caddy provisions, installs, and auto-renews the certificate with no extra work.
+
+{$WORKER_DOMAIN} {
+	encode zstd gzip
+
+	# Lift the default request-body cap so the manual-upload route can accept
+	# large standalone proofs (worker itself allows up to 512 MB).
+	request_body {
+		max_size 600MB
+	}
+
+	# Forward to the worker by its compose service name on the internal network.
+	reverse_proxy worker:8080
+
+	# Optional: uncomment and set ACME_EMAIL in .env for cert-expiry notices.
+	# tls {$ACME_EMAIL}
+}
