@@ -36,13 +36,6 @@ export const config = {
     defaultBleedInches: num('DEFAULT_BLEED_INCHES', 5),
   },
 
-  /** Sub-surface inpainting. Empty provider => AI fully disabled. */
-  inpaint: {
-    provider: str('INPAINT_PROVIDER') as 'gemini' | 'openai' | '',
-    apiKey: str('INPAINT_API_KEY'),
-    temperature: num('INPAINT_TEMPERATURE', 0.0),
-  },
-
   /**
    * Strict QC gate thresholds. A violation halts the job (see qc.ts).
    * These are deliberately tight for pre-press fidelity.

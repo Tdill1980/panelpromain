@@ -191,7 +191,6 @@ async function dispatch(job: ExtractionJob): Promise<void> {
         panelId: result.panelId,
         dimensions: `${result.dimensions.targetWidthPx}x${result.dimensions.targetHeightPx}`,
         storagePath: result.storagePath,
-        inpaintedVoids: result.inpaintedVoids,
         qcMetrics: result.qc.metrics.map((m) => `${m.name}=${m.value.toFixed(4)}`),
         ms: Date.now() - started,
       }),
@@ -267,15 +266,18 @@ function validateManifest(raw: unknown, opts: ValidateOpts): PanelManifest {
     throw new Error('manifest.physical.{widthInches,heightInches} are required numbers.');
   }
 
-  const quad = m.sourceQuad;
-  if (!Array.isArray(quad) || quad.length !== 4) {
-    throw new Error('manifest.sourceQuad must be exactly 4 points (TL,TR,BR,BL).');
+  const crop = m.cropBox as Record<string, unknown> | undefined;
+  if (
+    !crop ||
+    typeof crop.x !== 'number' ||
+    typeof crop.y !== 'number' ||
+    typeof crop.width !== 'number' ||
+    typeof crop.height !== 'number'
+  ) {
+    throw new Error('manifest.cropBox.{x,y,width,height} are required numbers.');
   }
-  for (const p of quad) {
-    const pt = p as Record<string, unknown>;
-    if (typeof pt?.x !== 'number' || typeof pt?.y !== 'number') {
-      throw new Error('Each sourceQuad point needs numeric {x,y}.');
-    }
+  if (crop.width <= 0 || crop.height <= 0) {
+    throw new Error('manifest.cropBox width/height must be positive.');
   }
 
   return raw as unknown as PanelManifest;
@@ -295,7 +297,7 @@ function main(): void {
         port: config.port,
         dpi: config.geometry.defaultDpi,
         bleedInches: config.geometry.defaultBleedInches,
-        inpaint: config.inpaint.provider || 'disabled',
+        engine: 'sharp',
       }),
     );
   });

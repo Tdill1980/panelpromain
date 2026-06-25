@@ -1,0 +1,36 @@
+# Render.com blueprint — clean managed deploy (no Docker, no terminal).
+#
+# 1. Push this repo to GitHub (done).
+# 2. On render.com: New → Blueprint → pick this repo. Render reads this file.
+# 3. It prompts for the secret values (sync:false). Paste them, click deploy.
+# 4. You get an auto-HTTPS URL like https://panelpro-geometry-worker.onrender.com
+#    — no Caddy, no firewall, no SSH. Pushes to main auto-redeploy.
+services:
+  - type: web
+    name: panelpro-geometry-worker
+    runtime: node
+    rootDir: panelpro-geometry-worker
+    # 4 GB RAM. A single 30000×9150 job holds a ~1.1 GB output buffer plus
+    # processing headroom — bump to "pro plus" (8 GB) if you run several at once.
+    plan: pro
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: node dist/index.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # sync:false → Render prompts for these and never stores them in the repo.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_OUTPUT_BUCKET
+        value: print-assets
+      - key: WEBHOOK_SECRET
+        sync: false
+      - key: DEFAULT_DPI
+        value: "150"
+      - key: DEFAULT_BLEED_INCHES
+        value: "5"
