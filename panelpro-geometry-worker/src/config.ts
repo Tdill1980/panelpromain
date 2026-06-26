@@ -36,6 +36,25 @@ export const config = {
     bucket: str('SUPABASE_OUTPUT_BUCKET', 'print-assets'),
   },
 
+  /**
+   * Storage backend for finished print assets. Defaults to Supabase, but
+   * switches to Cloudflare R2 automatically when R2 credentials are present —
+   * R2 has no 50 MB free-plan cap, so full-resolution prints upload for free.
+   */
+  storage: {
+    backend: (str('R2_ACCESS_KEY_ID') && str('R2_BUCKET') ? 'r2' : 'supabase') as 'r2' | 'supabase',
+    r2: {
+      accountId: str('R2_ACCOUNT_ID'),
+      accessKeyId: str('R2_ACCESS_KEY_ID'),
+      secretAccessKey: str('R2_SECRET_ACCESS_KEY'),
+      bucket: str('R2_BUCKET'),
+      // Defaults to the standard R2 S3 endpoint derived from the account id.
+      endpoint:
+        str('R2_ENDPOINT') ||
+        (str('R2_ACCOUNT_ID') ? `https://${str('R2_ACCOUNT_ID')}.r2.cloudflarestorage.com` : ''),
+    },
+  },
+
   /** RestylePro-compatible baseline constants. */
   geometry: {
     defaultDpi: num('DEFAULT_DPI', 150),
@@ -75,8 +94,15 @@ export type AppConfig = typeof config;
  */
 export function assertRuntimeConfig(): void {
   const missing: string[] = [];
-  if (!config.supabase.url) missing.push('SUPABASE_URL');
-  if (!config.supabase.serviceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (config.storage.backend === 'r2') {
+    if (!config.storage.r2.accountId && !config.storage.r2.endpoint) missing.push('R2_ACCOUNT_ID');
+    if (!config.storage.r2.accessKeyId) missing.push('R2_ACCESS_KEY_ID');
+    if (!config.storage.r2.secretAccessKey) missing.push('R2_SECRET_ACCESS_KEY');
+    if (!config.storage.r2.bucket) missing.push('R2_BUCKET');
+  } else {
+    if (!config.supabase.url) missing.push('SUPABASE_URL');
+    if (!config.supabase.serviceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  }
   if (missing.length) {
     throw new Error(`Missing required configuration: ${missing.join(', ')}`);
   }
