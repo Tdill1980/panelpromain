@@ -84,6 +84,23 @@ export const config = {
     // (still lossless) compression. 0–9; higher = smaller, more CPU.
     pngCompression: num('PNG_COMPRESSION', 6),
   },
+
+  /** Deterministic template color-key (strip the gray truck lines/windows/bg). */
+  key: {
+    // A pixel is "background white" if all channels are >= this.
+    whiteThreshold: num('KEY_WHITE_THRESHOLD', 235),
+    // A pixel is "gray template" if its saturation (max-min) is <= this …
+    satThreshold: num('KEY_SAT_THRESHOLD', 28),
+    // … AND its brightness is below this (so true white stripes are KEPT).
+    grayMaxLightness: num('KEY_GRAY_MAX_LIGHTNESS', 225),
+  },
+
+  /** Optional AI extraction (proof → flat design). Off unless a key is set. */
+  ai: {
+    provider: str('AI_EXTRACT_PROVIDER') as 'gemini' | 'openai' | '',
+    apiKey: str('AI_EXTRACT_API_KEY'),
+    model: str('AI_EXTRACT_MODEL'),
+  },
 } as const;
 
 export type AppConfig = typeof config;

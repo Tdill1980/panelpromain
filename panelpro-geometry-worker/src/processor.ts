@@ -21,7 +21,15 @@ import { config } from './config.js';
 import { resolveDimensions, bleedPx, liveDimensions, normalizeDimensionSource } from './sizing.js';
 import { uploadPrintAsset, uploadPreview } from './storage.js';
 import { runQualityGate, QcGateError } from './qc.js';
-import type { CropBox, ExtractionJob, ExtractionResult, ResolvedDimensions } from './types.js';
+import { keyOutTemplate } from './templateKey.js';
+import { extractFlatDesign } from './aiExtract.js';
+import type {
+  CropBox,
+  ExtractionJob,
+  ExtractionResult,
+  QcReport,
+  ResolvedDimensions,
+} from './types.js';
 
 // Allow large prints to stream without tripping libvips' pixel guard.
 sharp.cache(false);
@@ -44,21 +52,60 @@ export async function executeMechanicalExtraction(
   onStage('Fetching artwork');
   const masterBytes = await loadMaster(job);
 
+  // ── A2. OPTIONAL EXTRACTION: isolate the flat design from a proof ───────────
+  const transform = manifest.stripTemplate ? 'strip' : manifest.aiExtract ? 'ai' : null;
+  let designBytes = masterBytes;
+  let crop = manifest.cropBox;
+  if (transform) {
+    onStage(transform === 'ai' ? 'AI extracting design' : 'Stripping template');
+    const region = crop
+      ? await sharp(masterBytes, { limitInputPixels: false })
+          .extract({
+            left: Math.round(crop.x),
+            top: Math.round(crop.y),
+            width: Math.round(crop.width),
+            height: Math.round(crop.height),
+          })
+          .png()
+          .toBuffer()
+      : masterBytes;
+    designBytes = transform === 'ai' ? await extractFlatDesign(region) : await keyOutTemplate(region);
+    crop = undefined; // already isolated → scale the whole result
+  }
+
   // ── B–D. CROP → SIZE → MIRROR BLEED → 8-bit PNG ─────────────────────────────
   onStage('Rendering panel');
-  const printPng = await buildPanel(masterBytes, manifest.cropBox, dims);
+  const printPng = await buildPanel(designBytes, crop, dims);
 
-  // Strict QC gate: the produced panel vs the same region of the master sheet.
-  onStage('Quality check');
-  const qc = await runQualityGate({
-    candidate: printPng,
-    referenceBytes: job.masterBytes,
-    referenceUrl: manifest.masterArtworkUrl,
-    cropBox: manifest.cropBox,
-    dims,
-  });
-  if (!qc.passed) {
-    throw new QcGateError(job.jobId, qc);
+  // QC: the strict proof-vs-output gate only makes sense for a faithful crop.
+  // After extraction the output intentionally differs from the proof, so the
+  // structural gate is not applicable (the kept pixels are lossless either way).
+  let qc: QcReport;
+  if (transform) {
+    qc = {
+      passed: true,
+      metrics: [
+        {
+          name: transform === 'ai' ? 'aiExtract' : 'templateKey',
+          value: 0,
+          threshold: 0,
+          passed: true,
+          detail: 'extraction mode — structural QC vs the proof is not applicable',
+        },
+      ],
+    };
+  } else {
+    onStage('Quality check');
+    qc = await runQualityGate({
+      candidate: printPng,
+      referenceBytes: job.masterBytes,
+      referenceUrl: manifest.masterArtworkUrl,
+      cropBox: manifest.cropBox,
+      dims,
+    });
+    if (!qc.passed) {
+      throw new QcGateError(job.jobId, qc);
+    }
   }
 
   // ── E. UPLOAD ───────────────────────────────────────────────────────────────

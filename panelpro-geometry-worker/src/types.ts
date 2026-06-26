@@ -61,6 +61,13 @@ export interface PanelManifest {
   cropBox?: CropBox;
   /** Where the physical sizing came from. Defaults to 'unverified' if absent. */
   dimensionSource?: DimensionSource;
+  /**
+   * Strip the vehicle template by deterministic color-key: drop the gray truck
+   * lines/windows/wheels and the white background, keep the saturated wrap art.
+   */
+  stripTemplate?: boolean;
+  /** Use AI to reconstruct the flat design from the proof (needs AI key). */
+  aiExtract?: boolean;
 }
 
 /** Fully resolved destination geometry derived from {@link PanelPhysical}. */

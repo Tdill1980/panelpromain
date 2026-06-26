@@ -137,6 +137,8 @@
         <div class="hint">Bypasses the RestylePro fetch — the uploaded buffer is sized directly.</div>
         <label class="flatmode"><input type="checkbox" id="flatMode" />
           <b>Flat design art</b> — scale the whole image to the panel (no crop). Use this when you upload a pure design layer (e.g. the flag artboard), not a truck proof.</label>
+        <label class="flatmode"><input type="checkbox" id="stripTemplate" />
+          <b>Strip vehicle template</b> — color-key out the gray truck lines, windows, wheels & white background from your cropped selection, keeping only the wrap artwork (deterministic). Crop the panel first, then this isolates the design.</label>
         <div id="cropStage" class="crop-stage" style="display:none"></div>
         <div class="hint" id="cropHint" style="display:none">⚡ Drag / resize the blue box over the panel you want — the X/Y/W/H below fill in automatically.</div>
       </div>
@@ -551,6 +553,7 @@
         }
         manifest.cropBox = cropBox;
       }
+      if ($('stripTemplate').checked) manifest.stripTemplate = true;
       if (includeUrl) {
         if (!$('masterUrl').value.trim()) throw new Error('Master artwork URL is required');
         manifest.masterArtworkUrl = $('masterUrl').value.trim();
