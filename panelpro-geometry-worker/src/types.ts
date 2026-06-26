@@ -53,8 +53,12 @@ export interface PanelManifest {
    */
   masterArtworkUrl?: string;
   physical: PanelPhysical;
-  /** Rectangular panel region to crop from the master sheet. */
-  cropBox: CropBox;
+  /**
+   * Rectangular panel region to crop from a multi-view master sheet.
+   * OMIT for Flat-Design mode: when absent, the whole uploaded design layer is
+   * scaled to the panel (no crop) — the correct path for a pure artboard asset.
+   */
+  cropBox?: CropBox;
   /** Where the physical sizing came from. Defaults to 'unverified' if absent. */
   dimensionSource?: DimensionSource;
 }

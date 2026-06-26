@@ -45,8 +45,8 @@ export interface QcInput {
   referenceBytes?: Buffer;
   /** URL of the original RestylePro master used as the reference. */
   referenceUrl?: string;
-  /** The panel crop region within the master sheet. */
-  cropBox: CropBox;
+  /** The panel crop region within the master sheet; omit for flat-design mode. */
+  cropBox?: CropBox;
   dims: ResolvedDimensions;
 }
 
@@ -62,16 +62,18 @@ export async function runQualityGate(input: QcInput): Promise<QcReport> {
   const live = liveDimensions(input.dims);
   const c = input.cropBox;
 
-  // Reference = the exact source region of the master sheet.
-  const refRegion = await sharp(masterBytes, { limitInputPixels: false })
-    .extract({
-      left: Math.round(c.x),
-      top: Math.round(c.y),
-      width: Math.round(c.width),
-      height: Math.round(c.height),
-    })
-    .png()
-    .toBuffer();
+  // Reference = the source region (crop mode) or the whole design (flat mode).
+  const refRegion = c
+    ? await sharp(masterBytes, { limitInputPixels: false })
+        .extract({
+          left: Math.round(c.x),
+          top: Math.round(c.y),
+          width: Math.round(c.width),
+          height: Math.round(c.height),
+        })
+        .png()
+        .toBuffer()
+    : await sharp(masterBytes, { limitInputPixels: false }).png().toBuffer();
 
   // Candidate = the produced panel minus its bleed border (the live artwork),
   // so we compare like-for-like and the mirrored bleed doesn't skew the metrics.

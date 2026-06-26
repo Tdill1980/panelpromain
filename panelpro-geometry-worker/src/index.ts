@@ -329,18 +329,21 @@ function validateManifest(raw: unknown, opts: ValidateOpts): PanelManifest {
     throw new Error('manifest.physical.{widthInches,heightInches} are required numbers.');
   }
 
+  // cropBox is optional: present for multi-view crop mode, omitted for
+  // Flat-Design mode (whole pure design layer scaled to the panel).
   const crop = m.cropBox as Record<string, unknown> | undefined;
-  if (
-    !crop ||
-    typeof crop.x !== 'number' ||
-    typeof crop.y !== 'number' ||
-    typeof crop.width !== 'number' ||
-    typeof crop.height !== 'number'
-  ) {
-    throw new Error('manifest.cropBox.{x,y,width,height} are required numbers.');
-  }
-  if (crop.width <= 0 || crop.height <= 0) {
-    throw new Error('manifest.cropBox width/height must be positive.');
+  if (crop !== undefined) {
+    if (
+      typeof crop.x !== 'number' ||
+      typeof crop.y !== 'number' ||
+      typeof crop.width !== 'number' ||
+      typeof crop.height !== 'number'
+    ) {
+      throw new Error('manifest.cropBox.{x,y,width,height} must be numbers when provided.');
+    }
+    if (crop.width <= 0 || crop.height <= 0) {
+      throw new Error('manifest.cropBox width/height must be positive.');
+    }
   }
 
   return raw as unknown as PanelManifest;

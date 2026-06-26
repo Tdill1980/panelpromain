@@ -40,6 +40,10 @@
     .dropzone.drag, .dropzone.loaded { border-color: var(--accent); color: var(--txt); }
     .crop-stage { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px;
       overflow: hidden; background: #0a0d12; line-height: 0; }
+    .flatmode { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px;
+      font-size: 12px; color: var(--muted); cursor: pointer; }
+    .flatmode input { width: auto; margin-top: 2px; }
+    .flatmode b { color: var(--txt); }
     textarea { font-family: var(--mono); font-size: 12px; resize: vertical; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .row4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
@@ -130,7 +134,9 @@
           <span id="dropLabel">Click to choose, or drop a file here</span>
           <input id="fileInput" type="file" accept="image/png,image/tiff,image/jpeg" hidden />
         </div>
-        <div class="hint">Bypasses the RestylePro fetch — the uploaded buffer is cropped & sized directly.</div>
+        <div class="hint">Bypasses the RestylePro fetch — the uploaded buffer is sized directly.</div>
+        <label class="flatmode"><input type="checkbox" id="flatMode" />
+          <b>Flat design art</b> — scale the whole image to the panel (no crop). Use this when you upload a pure design layer (e.g. the flag artboard), not a truck proof.</label>
         <div id="cropStage" class="crop-stage" style="display:none"></div>
         <div class="hint" id="cropHint" style="display:none">⚡ Drag / resize the blue box over the panel you want — the X/Y/W/H below fill in automatically.</div>
       </div>
@@ -169,14 +175,16 @@
         <div class="muted" id="dimsFormula">target pixels (computed deterministically)</div>
       </div>
 
-      <label>Crop box — the panel's rectangle inside the master sheet (pixels)</label>
-      <div class="row4">
-        <div><label>X (left)</label><input id="cropX" type="number" value="0" /></div>
-        <div><label>Y (top)</label><input id="cropY" type="number" value="0" /></div>
-        <div><label>Width</label><input id="cropW" type="number" value="4000" /></div>
-        <div><label>Height</label><input id="cropH" type="number" value="1500" /></div>
+      <div id="cropFields">
+        <label>Crop box — the panel's rectangle inside the master sheet (pixels)</label>
+        <div class="row4">
+          <div><label>X (left)</label><input id="cropX" type="number" value="0" /></div>
+          <div><label>Y (top)</label><input id="cropY" type="number" value="0" /></div>
+          <div><label>Width</label><input id="cropW" type="number" value="4000" /></div>
+          <div><label>Height</label><input id="cropH" type="number" value="1500" /></div>
+        </div>
+        <div class="hint">Where the panel (e.g. Driver Side) sits within the multi-view proof. From RestylePro automatically, or read off the proof for manual jobs.</div>
       </div>
-      <div class="hint">Where the panel (e.g. Driver Side) sits within the multi-view proof. From RestylePro automatically, or read off the proof for manual jobs.</div>
 
       <!-- Auto-authenticated by the worker (window.__PP_SECRET__); hidden by default. -->
       <div id="secretRow" style="display:none">
@@ -424,7 +432,16 @@
     // space. Falls back gracefully to manual number entry if Konva can't load.
     let kStage = null, kLayer = null, kRect = null, kScale = 1;
 
+    // Flat-Design toggle: hide crop UI; the whole image is scaled to the panel.
+    $('flatMode').addEventListener('change', () => {
+      const flat = $('flatMode').checked;
+      $('cropFields').style.display = flat ? 'none' : '';
+      $('cropStage').style.display = flat || !uploadFile ? 'none' : 'block';
+      $('cropHint').style.display = flat || !uploadFile ? 'none' : 'block';
+    });
+
     function initCropCanvas(file) {
+      if ($('flatMode').checked) { $('cropStage').style.display = 'none'; $('cropHint').style.display = 'none'; return; }
       if (!window.Konva) return; // CDN blocked — numeric fields still work
       const img = new Image();
       img.onerror = () => { $('cropStage').style.display = 'none'; };
@@ -517,20 +534,23 @@
     });
 
     function buildManifest(includeUrl) {
-      const cropBox = {
-        x: +$('cropX').value, y: +$('cropY').value,
-        width: +$('cropW').value, height: +$('cropH').value,
-      };
-      if (!(cropBox.width > 0) || !(cropBox.height > 0)) {
-        throw new Error('Crop box width and height must be greater than 0');
-      }
       const manifest = {
         panelId: $('panelId').value.trim(),
         physical: { widthInches: +$('w').value, heightInches: +$('h').value,
           dpi: +$('dpi').value, bleedInches: +$('bleed').value },
         dimensionSource: $('dimSource').value,
-        cropBox,
       };
+      // Flat-Design mode: no cropBox — the whole pure design layer is scaled.
+      if (!$('flatMode').checked) {
+        const cropBox = {
+          x: +$('cropX').value, y: +$('cropY').value,
+          width: +$('cropW').value, height: +$('cropH').value,
+        };
+        if (!(cropBox.width > 0) || !(cropBox.height > 0)) {
+          throw new Error('Crop box width and height must be greater than 0');
+        }
+        manifest.cropBox = cropBox;
+      }
       if (includeUrl) {
         if (!$('masterUrl').value.trim()) throw new Error('Master artwork URL is required');
         manifest.masterArtworkUrl = $('masterUrl').value.trim();
