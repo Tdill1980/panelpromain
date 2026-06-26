@@ -112,16 +112,21 @@ async function loadMaster(job: ExtractionJob): Promise<Buffer> {
  */
 async function buildPanel(
   masterBytes: Buffer,
-  crop: CropBox,
+  crop: CropBox | undefined,
   dims: ResolvedDimensions,
 ): Promise<Buffer> {
   const bleed = bleedPx(dims);
   const live = liveDimensions(dims);
 
-  const rect = await validatedCrop(masterBytes, crop);
+  let pipe = sharp(masterBytes, { limitInputPixels: false });
+  // Crop mode: extract the panel region from a multi-view sheet.
+  // Flat-Design mode (no crop): scale the whole pure design layer to the panel.
+  if (crop) {
+    const rect = await validatedCrop(masterBytes, crop);
+    pipe = pipe.extract({ left: rect.x, top: rect.y, width: rect.width, height: rect.height });
+  }
 
-  return sharp(masterBytes, { limitInputPixels: false })
-    .extract({ left: rect.x, top: rect.y, width: rect.width, height: rect.height })
+  return pipe
     // Resample in 16-bit space to prevent gradient banding across big panels.
     .toColourspace('rgb16')
     .resize({ width: live.width, height: live.height, fit: 'fill', kernel: sharp.kernel.lanczos3 })
