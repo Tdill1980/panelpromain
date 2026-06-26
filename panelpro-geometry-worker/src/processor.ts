@@ -19,7 +19,7 @@ import sharp from 'sharp';
 
 import { config } from './config.js';
 import { resolveDimensions, bleedPx, liveDimensions, normalizeDimensionSource } from './sizing.js';
-import { uploadPrintAsset, uploadPreview } from './supabase.js';
+import { uploadPrintAsset, uploadPreview } from './storage.js';
 import { runQualityGate, QcGateError } from './qc.js';
 import type { CropBox, ExtractionJob, ExtractionResult, ResolvedDimensions } from './types.js';
 

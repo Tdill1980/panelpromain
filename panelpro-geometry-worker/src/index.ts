@@ -20,7 +20,7 @@ import { executeMechanicalExtraction } from './processor.js';
 import { QcGateError } from './qc.js';
 import { resolveDimensions, normalizeDimensionSource } from './sizing.js';
 import { createJob, getJob, listJobs, updateJob, type JobMeta } from './jobs.js';
-import { createSignedUrl } from './supabase.js';
+import { createSignedUrl, activeBackend } from './storage.js';
 import type { ExtractionJob, PanelManifest } from './types.js';
 
 // ESM has no __dirname — derive it from import.meta.url.
@@ -361,6 +361,7 @@ function main(): void {
         dpi: config.geometry.defaultDpi,
         bleedInches: config.geometry.defaultBleedInches,
         engine: 'sharp',
+        storage: activeBackend,
       }),
     );
   });
